@@ -211,7 +211,7 @@ npm run dev`}</pre>
             <div>
               <h3>The moat · 90s</h3>
               <p>
-                Switch trigger to <code>cold</code>, sender context to <code>demo_overlap</code>. You
+                Switch trigger to <code>cold</code>, sender context to <code>EXAMPLE_not_real_customers</code>. You
                 get <em>&ldquo;Insight Partners is an investor in both Ramp and Anthropic.&rdquo;</em>{" "}
                 Say it plainly: <strong>a web-search tool cannot produce that sentence.</strong> It
                 needs the investor graph. Fundable owns it.
@@ -420,7 +420,7 @@ otherwise
             <li key={c}>
               <code>{c}</code>
               {c === "default" && " — safe, generic. customer_domains is empty so the investor-overlap tie is dormant."}
-              {c === "demo_overlap" && " — DEMO ONLY. Its companies are well-known reference companies, NOT Fundable customers."}
+              {c === "EXAMPLE_not_real_customers" && " — DEMO ONLY. Its companies are well-known reference companies, NOT Fundable customers."}
             </li>
           ))}
         </ul>

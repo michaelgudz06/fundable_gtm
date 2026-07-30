@@ -1,5 +1,5 @@
 {
-  "id": "demo_overlap",
+  "id": "EXAMPLE_not_real_customers",
   "provenance": "illustrative",
 
   "//WHY_THIS_EXISTS": "The shared-investor tie is the highest-value angle in the PRD, and it is dormant in `default` because customer_domains is empty until Jacob confirms which customers may be named. This context exists so the mechanic can be demonstrated and tested end to end.",
