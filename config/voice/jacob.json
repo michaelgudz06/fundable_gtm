@@ -61,7 +61,8 @@
       "Names the specific fact, not the benefit. 'ribbit led your series a' beats 'a quick question'.",
       "8 words maximum. Shorter is better.",
       "No colons used as a marketing device, no brackets, no 'Re:' fakery.",
-      "Never a question mark, and never clickbait: it should read as though a person typed it."
+      "Never a question mark, and never clickbait: it should read as though a person typed it.",
+      "A shared-investor subject names both companies. Never 'backed both of you' or any second-person pairing: that claims the fund also backs the sender, which the facts never state. Compressing for length is exactly how this error happens."
     ],
     "good_examples": [
       "ribbit led your series a",
@@ -71,7 +72,8 @@
     "bad_examples": [
       "Quick Question About Your Growth Strategy",
       "Unlock 10x Pipeline with Fundable",
-      "Following up!!"
+      "Following up!!",
+      "spark capital backs both of you"
     ]
   },
 

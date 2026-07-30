@@ -424,6 +424,91 @@ describe("verifyCopy", () => {
     assert.ok(!blocked.some((i) => i.kind === "conflation"), JSON.stringify(blocked));
   });
 
+  test("blocks second-person compression of a shared-investor fact", () => {
+    // The M3 cold-list audit caught this on three subject lines. The body was
+    // right; the subject dropped the reference company and put the SENDER in its
+    // place, asserting the fund also backs Fundable.
+    const overlap: Evidence[] = [
+      {
+        fact: "Spark Capital is an investor in both Plaid and Anthropic.",
+        source: "fundable",
+        endpoint: "/investors",
+        confidence: 1,
+      },
+    ];
+    const names = ["Plaid", "Jacob Klionsky", "Fundable"];
+
+    for (const bad of [
+      "spark capital backs both of you",
+      "our shared investor",
+      "we both work with Spark Capital",
+    ]) {
+      const blocked = blockingIssues(
+        verifyCopy({
+          copy: `Hi,\n\nSpark Capital is an investor in both Plaid and Anthropic.\n\nJacob`,
+          subject: bad,
+          evidence: overlap,
+          allowedNames: names,
+          senderCompany: "Fundable",
+        })
+      );
+      assert.ok(
+        blocked.some((i) => i.kind === "pronoun_scope"),
+        `not caught: "${bad}" -> ${JSON.stringify(blocked)}`
+      );
+    }
+
+    // Naming both companies explicitly is the correct form and must pass.
+    const good = blockingIssues(
+      verifyCopy({
+        copy: "Hi,\n\nSpark Capital is an investor in both Plaid and Anthropic.\n\nJacob",
+        subject: "spark capital backs plaid and anthropic",
+        evidence: overlap,
+        allowedNames: names,
+        senderCompany: "Fundable",
+      })
+    );
+    assert.deepEqual(good, [], JSON.stringify(good));
+  });
+
+  test("allows the shared-investor pairing when evidence names the sender's own investor", () => {
+    // The rule is checked, not assumed: if the sender's investor set ever enters
+    // evidence, the pairing becomes legitimate.
+    const withSender: Evidence[] = [
+      { fact: "Spark Capital is an investor in both Plaid and Anthropic.", source: "fundable", confidence: 1 },
+      { fact: "Spark Capital is an investor in Fundable.", source: "sender_context", confidence: 1 },
+    ];
+    const blocked = blockingIssues(
+      verifyCopy({
+        copy: "Hi,\n\nSpark Capital backed both of us.\n\nJacob",
+        subject: "spark capital backs both of you",
+        evidence: withSender,
+        allowedNames: ["Plaid", "Fundable", "Jacob Klionsky"],
+        senderCompany: "Fundable",
+      })
+    );
+    assert.ok(!blocked.some((i) => i.kind === "pronoun_scope"), JSON.stringify(blocked));
+  });
+
+  test("does not glue proper nouns across a sentence boundary", () => {
+    // "…Anthropic. Fundable maps…" was reported as the invented entity
+    // "Anthropic. Fundable". Noisy warnings train reviewers to ignore them.
+    const overlap: Evidence[] = [
+      { fact: "Accel is an investor in both Linear and Anthropic.", source: "fundable", confidence: 1 },
+      { fact: "Fundable maps which investors back which companies.", source: "sender_context", confidence: 1 },
+    ];
+    const issues = verifyCopy({
+      copy: "Hi,\n\nAccel is an investor in both Linear and Anthropic. Fundable maps which investors back which companies.\n\nJacob",
+      evidence: overlap,
+      allowedNames: ["Linear", "Fundable", "Jacob Klionsky"],
+      senderCompany: "Fundable",
+    });
+    assert.ok(
+      !issues.some((i) => i.quote.includes("Anthropic. Fundable")),
+      `glued across sentences: ${JSON.stringify(issues.filter((i) => i.kind === "entity"))}`
+    );
+  });
+
   test("flags an unrecognised company name as a warning, not a block", () => {
     // The proper-noun check is heuristic, so it must never downgrade on its own.
     const copy = "Hi Eric,\n\nCongrats on the $750M Series F, led by Sequoia Capital.\n\nJacob";
