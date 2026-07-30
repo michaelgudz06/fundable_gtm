@@ -163,6 +163,25 @@ export default function DemoPage() {
     const candidate = keyDraft.trim();
     if (!candidate) return;
     setGateError(null);
+
+    // Shape check before spending a round-trip. Four keys live in this project's
+    // .env and only one of them opens this door, so "Invalid bearer token" is a
+    // uselessly vague thing to say when the paste is recognisably a different
+    // key. Prefix matching only — nothing is logged or sent anywhere.
+    const MISTAKEN: { prefix: string; name: string; role: string }[] = [
+      { prefix: "vg_", name: "Fundable API key", role: "the server calls Fundable itself using the value in .env" },
+      { prefix: "sk-or-v1-", name: "OpenRouter key", role: "the server calls OpenRouter itself using the value in .env" },
+      { prefix: "sb_secret_", name: "Supabase secret key", role: "the server uses it for the cache and request log" },
+      { prefix: "sb_publishable_", name: "Supabase publishable key", role: "not used by this demo at all" },
+    ];
+    const mistake = MISTAKEN.find((m) => candidate.startsWith(m.prefix));
+    if (mistake) {
+      setGateError(
+        `That looks like your ${mistake.name} — ${mistake.role}. This gate wants PERSONALIZE_API_KEY, which is this API's own bearer key (a 64-character hex string). Get it with: grep '^PERSONALIZE_API_KEY=' .env | cut -d= -f2`
+      );
+      return;
+    }
+
     try {
       const res = await fetch("/api/meta", { headers: { Authorization: `Bearer ${candidate}` } });
       if (!res.ok) {
@@ -297,8 +316,10 @@ export default function DemoPage() {
         <div className="demo-gate demo-panel">
           <h2>Personalization API — demo</h2>
           <p>
-            Internal tool. Paste the <code>PERSONALIZE_API_KEY</code> to continue. The key is
-            held in memory only — a refresh forgets it.
+            Internal tool. Paste <code>PERSONALIZE_API_KEY</code>{" "}
+            — this API&apos;s own bearer key, a 64-character hex string. <strong>Not</strong> your
+            Fundable, OpenRouter, or Supabase key: the server calls those itself using the values in{" "}
+            <code>.env</code>. Held in memory only, so a refresh forgets it.
           </p>
           <input
             className="demo-input"
