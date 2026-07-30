@@ -1,0 +1,19 @@
+{
+  "id": "default",
+  "provenance": "placeholder",
+  "provenance_note": "Safe, generic sender facts only. No customer names, no case studies, no numbers — those come from Jacob (PRD §9.3) and get added here as real facts. The writer treats these as a closed set, so anything listed here can appear in outbound copy verbatim.",
+
+  "sender_facts": [
+    "Fundable (fundable.ai) tracks startup funding rounds, investors, and people in real time, for VCs, founders, and GTM teams.",
+    "Fundable customers use deal alerts to reach companies the day a round happens, not weeks later."
+  ],
+
+  "//customer_domains": "WARNING: a domain listed here MAY BE NAMED IN OUTBOUND EMAIL as a company that shares an investor with the prospect. Only add customers Jacob is allowed to reference publicly. Empty until he confirms which ones (PRD §9.3) — the shared-investor tie, the highest-value angle, stays dormant until then.",
+  "customer_domains": [],
+
+  "home_city": "New York",
+  "sender_city_label": "our team in New York",
+
+  "//target_stages": "Round labels this sender focuses on, matched against the prospect's latest round for the same-stage tie.",
+  "target_stages": ["seed", "series a", "series b"]
+}

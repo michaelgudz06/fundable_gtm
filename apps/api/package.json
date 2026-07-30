@@ -1,0 +1,27 @@
+{
+  "name": "@fundable/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "predev": "tsc --build ../../packages/fundable-shared",
+    "dev": "next dev -p 3111",
+    "prebuild": "tsc --build ../../packages/fundable-shared",
+    "build": "next build",
+    "start": "next start -p 3111",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.unit.test.ts"
+  },
+  "dependencies": {
+    "@fundable/shared": "*",
+    "next": "16.2.12",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "tsx": "^4.23.1",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,38 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# env files — never commit real keys. .env.example is the only tracked env file.
+.env
+.env.*
+!.env.example
+
+# dependencies
+node_modules
+/.pnp
+.pnp.*
+
+# builds
+dist
+/build
+/out
+.next/
+*.tsbuildinfo
+next-env.d.ts
+
+# testing
+/coverage
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# vercel
+.vercel
+
+# local scratch
+/scratch

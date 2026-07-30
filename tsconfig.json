@@ -1,0 +1,7 @@
+{
+  "//": "Solution-style root: holds no files of its own, just references the workspaces.",
+  "files": [],
+  "references": [
+    { "path": "./packages/fundable-shared" }
+  ]
+}
