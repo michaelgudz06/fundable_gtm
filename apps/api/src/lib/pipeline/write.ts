@@ -82,6 +82,8 @@ THE FACTS ARE A CLOSED SET. You will be given numbered facts. They are everythin
 
 NEVER MERGE SEPARATE FACTS INTO ONE CLAIM. Each sentence you write may restate one fact; it may not weld two facts into a third claim neither of them makes. The specific trap: if one fact gives a round and another gives a valuation, do NOT write "raised at a $X valuation" — the valuation belongs to that round only if a single fact says so. Keep separate facts in separate sentences, each faithful to its own source.
 
+NAME BOTH PARTIES IN A SHARED-INVESTOR CLAIM, IN THE SUBJECT AS WELL AS THE BODY. A fact of the form "<Fund> is an investor in both <A> and <B>" is about two named companies, neither of which is the sender. NEVER compress it to "backed both of you", "both of us", "our shared investor", or any second-person pairing: in a one-to-one message that reads as an investor the sender shares with the recipient, which the facts do not state. The subject line is where this compression is tempting because it is short. Write "<Fund> backs <A> and <B>" instead, or drop the second company and name only the recipient's side.
+
 STRUCTURE (${channel})
 ${structure}
 ${subjectRules}
@@ -221,6 +223,7 @@ export async function writeAndVerify(input: {
       template: input.template ?? null,
       allowedNames: input.allowedNames,
       forbiddenPhrases: input.voice.forbidden_phrases ?? [],
+      senderCompany: input.voice.persona.company ?? null,
     });
 
     const length = checkLength(body, input.voice, input.channel);

@@ -87,10 +87,19 @@ export default async function Home() {
           </Link>
           <span className="ov-cta-note">
             {keySet
-              ? "Needs the bearer key from .env (PERSONALIZE_API_KEY). Sample mode works without it."
+              ? "The demo asks for the bearer key once (held in memory, never stored). Sample mode works without it."
               : "PERSONALIZE_API_KEY is not set — the demo will report 503 until it is."}
           </span>
         </div>
+        {keySet && (
+          <div className="ov-keyhint">
+            Grab the key with:
+            <code>
+              grep &apos;^PERSONALIZE_API_KEY=&apos;
+              ~/Developer/work/fundable/personalize-api/.env | cut -d= -f2 | pbcopy
+            </code>
+          </div>
+        )}
       </header>
 
       {warning && (

@@ -254,6 +254,40 @@ check is heuristic and a false block would make the endpoint useless.
 Honest rounding is allowed: evidence of `$3,577,000,000` supports "$3.6B" (within
 1%), but not "$4B".
 
+### M3 acceptance — 25-row cold list
+
+Target was a `template_only` rate under 40%. **Measured 12%** (22 personalized, 3
+no_match) across 25 real domains, using `trigger=cold` with the `demo_overlap`
+sender context. Cost: 115 Fundable credits and $0.154 of Exa for the whole list
+(~4.6 credits and $0.006 per row), p95 12s uncached.
+
+**Read that 12% with a caveat.** `demo_overlap` lists four extremely
+well-connected reference companies, so `investor_overlap` fired on 21 of 22
+personalized rows and confidence pinned at 0.95 almost everywhere. Real reference
+customers will be fewer and less ubiquitously funded, so expect a higher
+downgrade rate in production. The number is honest but flattered by the fixture.
+
+The audit also found a third verification defect, described below.
+
+### Second-person compression — the pronoun that moves the claim
+
+Three subject lines came back as *"dragoneer and t. rowe price backed both of
+you"*. The bodies were correct ("an investor in both Revolut and Anthropic"), but
+the subject dropped the reference company and put **the sender** in its place —
+asserting the fund also backs Fundable. Nothing in evidence says that.
+
+No figure, date, or name is wrong in that sentence. The pronoun reassigns who the
+claim is about, which is why the numeric and entity checks could not see it. Fixed
+at all three layers, same pattern as the conflation bug: a `pronoun_scope`
+blocking check in `verify.ts` (which consults evidence for a sender-side investor
+rather than assuming there is none), an explicit prompt rule, and a subject-line
+rule plus a bad example in the voice profile.
+
+Also fixed from the same audit: the proper-noun check glued `"…Anthropic."` to
+`"Fundable maps…"` and reported `"Anthropic. Fundable"` as an invented entity.
+Sentences are now split before extraction — a noisy warning is worse than none,
+because reviewers learn to skip them.
+
 ### Conflation — two true facts welded into a false claim
 
 The M1 acceptance audit caught the writer producing *"closed an equity round on

@@ -51,7 +51,8 @@ export type VerifyIssue = {
     | "relationship"
     | "entity"
     | "style"
-    | "conflation";
+    | "conflation"
+    | "pronoun_scope";
 };
 
 export type VerifyInput = {
@@ -64,6 +65,12 @@ export type VerifyInput = {
   allowedNames?: string[];
   /** From the voice profile. */
   forbiddenPhrases?: string[];
+  /**
+   * The sender's own company. Needed to catch second-person compression: "backed
+   * both of you" only holds if evidence actually places an investor in the
+   * SENDER's company, not merely in a third-party reference company.
+   */
+  senderCompany?: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -197,19 +204,26 @@ const CAP_STOPWORDS = new Set([
   "no", "not", "yes", "maybe", "either", "both", "most", "many", "some", "any",
 ]);
 
-const PROPER_NOUN = /\b([A-Z][A-Za-z0-9&.'’-]*(?:\s+[A-Z][A-Za-z0-9&.'’-]*)*)\b/g;
+const PROPER_NOUN = /\b([A-Z][A-Za-z0-9&'’-]*(?:[.&]?\s+[A-Z][A-Za-z0-9&'’-]*)*)\b/g;
 
 function extractProperNouns(text: string): string[] {
   const out = new Set<string>();
-  for (const m of text.matchAll(PROPER_NOUN)) {
-    const phrase = m[1]?.trim();
-    if (!phrase) continue;
-    // Drop phrases made entirely of ordinary capitalised words.
-    const tokens = phrase.split(/\s+/);
-    const meaningful = tokens.filter((t) => !CAP_STOPWORDS.has(t.replace(/[.'’&-]/g, "").toLowerCase()));
-    if (!meaningful.length) continue;
-    // A single all-caps-initial token that is a common word is not an entity.
-    out.add(meaningful.join(" "));
+
+  // Split on sentence boundaries FIRST. Allowing "." inside a token let the
+  // regex glue "…Anthropic." to "Fundable is…" and report "Anthropic. Fundable"
+  // as an invented entity — a false positive flagged by the M3 audit. Noisy
+  // warnings are worse than none: reviewers learn to skip them.
+  for (const sentence of text.split(/(?<=[.!?])\s+|\n+/)) {
+    for (const m of sentence.matchAll(PROPER_NOUN)) {
+      const phrase = m[1]?.trim().replace(/[.\s]+$/, "");
+      if (!phrase) continue;
+      const tokens = phrase.split(/\s+/);
+      const meaningful = tokens.filter(
+        (t) => !CAP_STOPWORDS.has(t.replace(/[.'’&-]/g, "").toLowerCase())
+      );
+      if (!meaningful.length) continue;
+      out.add(meaningful.join(" ").replace(/[.\s]+$/, ""));
+    }
   }
   return [...out];
 }
@@ -387,6 +401,51 @@ export function verifyCopy(input: VerifyInput): VerifyIssue[] {
           kind: "conflation",
         });
       }
+    }
+  }
+
+  // --- second-person compression -------------------------------------------
+  // Caught by the M3 cold-list audit on three subject lines: the body correctly
+  // said "an investor in both Revolut and Anthropic", but the SUBJECT compressed
+  // it to "dragoneer backed both of you". In a 1:1 email signed by one person,
+  // "both of you" reads as recipient + sender — so it silently asserts the fund
+  // also backs the SENDER's company, which no evidence supports.
+  //
+  // No figure, date, or name is wrong in that sentence; the pronoun reassigns who
+  // the claim is about. That is why the other checks cannot see it.
+  const SHARED_SECOND_PERSON: { re: RegExp; label: string }[] = [
+    { re: /\bboth of (?:you|us)\b/i, label: '"both of you/us" includes the sender in the relationship' },
+    { re: /\bbacke?d?\s+both\s+of\b/i, label: "asserts an investor backed both the recipient and the sender" },
+    { re: /\byou and (?:i|me|us)\b/i, label: "pairs the recipient with the sender" },
+    { re: /\bwe(?:'ve| have)? both\b/i, label: "asserts something shared between sender and recipient" },
+    { re: /\bboth our\b/i, label: "asserts a shared attribute between sender and recipient" },
+    { re: /\bour (?:shared|common) investors?\b/i, label: "asserts the sender shares an investor with the recipient" },
+  ];
+
+  // The claim only holds if evidence actually places an investor in the sender's
+  // own company. Sender-context facts describe what the sender DOES, never who
+  // funds it, so in practice this is never satisfied — but it is checked rather
+  // than assumed, so the rule stays correct if that ever changes.
+  const senderCompany = input.senderCompany?.trim();
+  const INVESTOR_WORD = /\b(investor|invests?|backed?|backs|funded|portfolio)\b/i;
+  const senderInvestmentSupported =
+    !!senderCompany &&
+    input.evidence.some(
+      (e) =>
+        normalizeForMatch(e.fact).includes(normalizeForMatch(senderCompany)) &&
+        INVESTOR_WORD.test(e.fact)
+    );
+
+  if (!senderInvestmentSupported) {
+    for (const { re, label } of SHARED_SECOND_PERSON) {
+      const hit = copy.match(re);
+      if (!hit) continue;
+      issues.push({
+        quote: hit[0],
+        reason: `${label}, but no evidence names an investor in ${senderCompany ?? "the sender's own company"} — name both parties explicitly instead`,
+        severity: "block",
+        kind: "pronoun_scope",
+      });
     }
   }
 
