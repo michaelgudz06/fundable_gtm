@@ -1,0 +1,26 @@
+{
+  "name": "@fundable/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fundable REST client, curated alias tables, claim checker, and OpenRouter client. Extracted from post-studio.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --noEmit",
+    "test": "node --run test:unit",
+    "test:unit": "tsx --test test/*.unit.test.ts",
+    "smoke": "tsx --test --test-concurrency=2 test/*.smoke.test.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.1",
+    "typescript": "^5.7.0"
+  }
+}
