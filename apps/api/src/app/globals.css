@@ -861,3 +861,148 @@ a:hover {
   overflow-x: auto;
   max-width: 100%;
 }
+
+/* ==========================================================================
+   App nav — thin, sticky, present on every page.
+   ========================================================================== */
+
+.app-nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  padding: 9px 24px;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.app-nav a { color: var(--ink-3); }
+.app-nav a:hover { color: var(--ink); text-decoration: none; }
+
+/* ==========================================================================
+   Guide page
+   ========================================================================== */
+
+.gd-shell {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 40px 24px 72px;
+}
+
+.gd-head { border-bottom: 1px solid var(--border); padding-bottom: 22px; }
+.gd-head h1 { font-size: 26px; margin: 0 0 12px; letter-spacing: -0.02em; line-height: 1.2; }
+.gd-lede { font-size: 15px; color: var(--ink-2); margin: 0; max-width: 66ch; line-height: 1.6; }
+
+.gd-toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.gd-toc a { color: var(--ink-3); white-space: nowrap; }
+.gd-toc a:hover { color: var(--accent); text-decoration: none; }
+
+.gd-section { margin-top: 40px; scroll-margin-top: 60px; }
+.gd-section h2 {
+  font-size: 19px;
+  margin: 0 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.gd-h3 {
+  font-size: 12px !important;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-3);
+  margin: 22px 0 10px !important;
+}
+.gd-section h3 { font-size: 14px; margin: 0 0 6px; }
+.gd-section p { font-size: 14px; line-height: 1.65; color: var(--ink-2); margin: 0 0 12px; max-width: 74ch; }
+.gd-sub { color: var(--ink-3) !important; font-size: 13px !important; }
+.gd-section code { font-family: var(--mono); font-size: 12.5px; color: var(--ink); background: var(--surface-2); border-radius: 4px; padding: 1px 5px; }
+
+.gd-code, .gd-flow {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 0 0 14px;
+  color: var(--ink);
+  white-space: pre;
+}
+.gd-flow { border-left: 3px solid var(--accent); color: var(--ink-2); }
+
+.gd-note {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: 8px;
+  padding: 11px 14px;
+  font-size: 13px !important;
+}
+.gd-caveat {
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+  border-radius: 8px;
+  padding: 11px 14px;
+  font-size: 13px !important;
+}
+
+.gd-check, .gd-asks { padding-left: 22px; margin: 0 0 14px; }
+.gd-check li, .gd-asks li { font-size: 14px; line-height: 1.65; color: var(--ink-2); margin-bottom: 12px; }
+.gd-check li strong, .gd-asks li strong { color: var(--ink); }
+.gd-check pre { margin-top: 8px; }
+
+/* demo beats */
+.gd-beats { display: flex; flex-direction: column; gap: 10px; }
+.gd-beat {
+  display: flex;
+  gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.gd-beat-n {
+  flex: 0 0 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #0b1524;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+.gd-beat h3 { font-size: 13.5px; margin: 3px 0 6px; }
+.gd-beat p { font-size: 13.5px; margin-bottom: 8px; }
+.gd-beat p:last-child { margin-bottom: 0; }
+
+/* do / do not */
+.gd-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 8px; }
+.gd-do, .gd-dont { border-radius: 10px; padding: 14px 16px; border: 1px solid var(--border); background: var(--surface); }
+.gd-dont { border-left: 3px solid var(--bad); }
+.gd-do { border-left: 3px solid var(--good); }
+.gd-do h3, .gd-dont h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-3); margin-bottom: 8px; }
+.gd-do ul, .gd-dont ul { margin: 0; padding-left: 18px; }
+.gd-do li, .gd-dont li { font-size: 13px; line-height: 1.6; color: var(--ink-2); margin-bottom: 6px; }
+
+.gd-bugs, .gd-limits { padding-left: 20px; margin: 0 0 14px; }
+.gd-bugs li, .gd-limits li { font-size: 13.5px; line-height: 1.65; color: var(--ink-2); margin-bottom: 9px; }
+.gd-limits li strong { color: var(--ink); }
+
+.gd-warnpill { color: var(--warn) !important; }
+.gd-okpill { color: var(--good) !important; }
+
+.gd-shell .ov-table { margin-bottom: 14px; }
