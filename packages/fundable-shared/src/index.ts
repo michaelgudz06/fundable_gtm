@@ -78,6 +78,7 @@ export {
   TITLED_PROMPT,
   classifyIcp,
   companyResearchQuery,
+  companyResearchQueryByName,
   isFreemail,
 } from "./icp.js";
 export type { ClassifyInput, Icp, IcpPath, IcpResult } from "./icp.js";

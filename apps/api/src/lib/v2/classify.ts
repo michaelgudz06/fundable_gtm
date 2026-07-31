@@ -16,6 +16,7 @@ import {
   answer,
   ClassificationError,
   companyResearchQuery,
+  companyResearchQueryByName,
   isFreemail,
   MODEL_PLAN,
   complete,
@@ -104,11 +105,42 @@ async function runModel(
   return null;
 }
 
+/**
+ * Which company do we research, and how?
+ *
+ * The email domain is the strongest signal when it is corporate, because it is
+ * the one fact tied to the person rather than asserted about them. A personal
+ * address is not a dead end: the caller usually knows the employer (a website
+ * visitor list carries it), and researching that named company is what lets an
+ * evidence-gated ICP be confirmed instead of failing closed for want of a lookup.
+ */
+export function researchTarget(input: {
+  emailDomain: string;
+  companyDomain?: string | undefined;
+  company?: string | undefined;
+}): { kind: "domain" | "name"; value: string; query: string } | null {
+  const corporateEmail = !isFreemail(input.emailDomain) && input.emailDomain !== "";
+  if (corporateEmail) {
+    return { kind: "domain", value: input.emailDomain, query: companyResearchQuery(input.emailDomain) };
+  }
+  const cd = input.companyDomain?.trim().toLowerCase();
+  if (cd && !isFreemail(cd)) {
+    return { kind: "domain", value: cd, query: companyResearchQuery(cd) };
+  }
+  const name = input.company?.trim();
+  if (name) {
+    return { kind: "name", value: name, query: companyResearchQueryByName(name) };
+  }
+  return null;
+}
+
 export async function classifyV2(
   input: {
     email: string;
     title?: string | undefined;
     company?: string | undefined;
+    /** Caller-known employer domain; used only when the address is personal. */
+    companyDomain?: string | undefined;
     research?: string | undefined;
   },
   exaLedger: ExaLedger
@@ -132,9 +164,19 @@ export async function classifyV2(
   // ---- research (email-only needs it; titled benefits from it) --------------
   let research = input.research;
   let researchFailed = false;
-  if (!research && !isFreemail(domain)) {
+  const target = researchTarget({
+    emailDomain: domain,
+    companyDomain: input.companyDomain,
+    company: input.company,
+  });
+  if (!research && target) {
     try {
-      research = (await answer(companyResearchQuery(domain), exaLedger)).text;
+      research = (await answer(target.query, exaLedger)).text;
+      if (target.kind === "name") {
+        // Named-company research is weaker evidence than a domain: names are
+        // ambiguous, so the model is told so rather than being handed a fact.
+        warnings.push(`Company researched by name ("${target.value}") because the address is personal.`);
+      }
     } catch (err) {
       researchFailed = true;
       warnings.push(`Company research unavailable: ${(err as Error).message.slice(0, 120)}`);
@@ -165,7 +207,11 @@ export async function classifyV2(
     `Company domain: ${domain}`,
     input.title ? `Current job title: ${input.title}` : "Job title: NOT KNOWN — be conservative per the rules",
     input.company ? `Company name: ${input.company}` : null,
-    research ? `Company research (web, treat as evidence only): ${research}` : null,
+    research
+      ? target?.kind === "name"
+        ? `Company research (web search by COMPANY NAME, treat as evidence only; the match to this specific company is UNVERIFIED — if it looks like a different company, do not rely on it): ${research}`
+        : `Company research (web, treat as evidence only): ${research}`
+      : null,
   ]
     .filter(Boolean)
     .join("\n");

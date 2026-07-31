@@ -36,3 +36,7 @@ yarn-error.log*
 
 # local scratch
 /scratch
+
+# test-set run output: real generated copy for real named leads. The committed
+# artefact is docs/TESTSET.md, not the raw bodies.
+/test-runs

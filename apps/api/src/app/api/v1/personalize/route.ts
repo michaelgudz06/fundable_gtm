@@ -65,6 +65,7 @@ type RequestBody = {
     first_name?: unknown;
     title?: unknown;
     company_name?: unknown;
+    company_domain?: unknown;
     linkedin_url?: unknown;
   };
   additional_context?: Record<string, unknown>;
@@ -163,7 +164,15 @@ export async function POST(req: Request): Promise<Response> {
     }
 
     // ---- classification -----------------------------------------------------
-    const cls = await classifyV2({ email, title, company }, exa);
+    // company_domain is the caller's assertion about the employer. It never
+    // overrides a corporate email domain and never participates in the identity
+    // check above; it exists so a lead with a personal address is still
+    // researchable instead of failing closed for want of a lookup.
+    const companyDomain =
+      typeof kf.company_domain === "string" && kf.company_domain.trim()
+        ? normalizeDomain(kf.company_domain).domain
+        : undefined;
+    const cls = await classifyV2({ email, title, company, companyDomain }, exa);
     const entry = cls.icpNumber !== null ? icpByNumber(cls.icpNumber) : null;
     const useCases = useCasesFor(cls.icpNumber);
 
@@ -177,7 +186,7 @@ export async function POST(req: Request): Promise<Response> {
       target_buyer_role:
         typeof ctxIn.target_buyer_role === "string" ? ctxIn.target_buyer_role.trim() || undefined : undefined,
       sender_name: typeof ctxIn.sender_name === "string" ? ctxIn.sender_name.trim() || undefined : undefined,
-      icp_descriptor: entry ? entry.name.toLowerCase() : undefined,
+      icp_descriptor: entry?.email_descriptor,
     };
 
     let emailBody: string;
