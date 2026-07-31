@@ -181,8 +181,22 @@ Startup Marketing & PR Agency - AI-native marketing/growth/SEO/PR agency for ven
 Rules: VCs, angels, investors, VC newsletter operators = "Not Core ICP". Large/enterprise/diversified companies (banks, F500, big consultancies, media, government) = "Not Core ICP" unless it's specifically a small startup-focused vendor. If in doubt, "Not Core ICP".`;
 
 /** The research question the email-only path asks Exa, ported verbatim. */
+/**
+ * Deliberately NEUTRAL about startups.
+ *
+ * This used to ask "does it primarily sell to startups?", which is the question
+ * the startup-customer gates need — and it quietly decided every other ICP too.
+ * Research for CBRE came back "large enterprise, does not focus on startups",
+ * and a Vice Chairman at the largest commercial real-estate firm on earth was
+ * rejected from ICP #2, an ICP whose evidence gate is "none" and whose company
+ * definition is simply "commercial real-estate firm in a major city".
+ *
+ * So the query now asks what the company IS. The registry decides what that
+ * means; the customer base is still reported, so the gated ICPs keep the
+ * evidence they require.
+ */
 export function companyResearchQuery(domain: string): string {
-  return `What does the company at domain ${domain} do, and does it primarily sell to startups? Is it a small company or large enterprise?`;
+  return `What is the company at domain ${domain}? Describe its industry and what it does, what it sells and to whom (its typical customers), and its approximate size in employees.`;
 }
 
 /**
