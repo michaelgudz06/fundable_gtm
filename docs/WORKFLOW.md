@@ -146,11 +146,24 @@ titles and the API had only email + LinkedIn URL:
 | | |
 |---|---|
 | Exact label agreement | 197/277 (71%) |
-| **Core leads recovered** | **10 of 83** |
+| **Core leads recovered** | **10 of 83 (12%)** |
 | False positives | 2 |
 | `ICP #2: CRE Broker` recall | **0 / 15** |
 | `ICP #6: Founder` recall | 2 / 30 |
 | `ICP #19: Investor` recall | 2 / 16 |
+
+Replayed with title **and company** supplied — what an identification vendor
+returns — after fixing the research question described below:
+
+| | no title | with title + company |
+|---|---|---|
+| Core recall | 12% (10/83) | **44% (28/64)** |
+| Exact-label recall | 6% (5/83) | **34% (22/64)** |
+| False positives | 1% (2/194) | **0% (0/40)** |
+
+Titles here were extracted from the reference's own reasoning, so 44% is an
+upper bound, not a forecast. It is enough to say the input is the binding
+constraint and not enough to call the accept path solved.
 
 The rejection path is solid. The accept path barely functions without a title.
 `robert.stillman@cbre.com` returns Not Core: CBRE is obviously a CRE firm, but
@@ -174,6 +187,35 @@ which resolves the actual profile, not to a search heuristic.**
 
 If a title genuinely cannot be obtained: send the generic template. That is the
 Not Core path, and it is safe.
+
+### A leading research question was rejecting whole ICPs
+
+`ICP #2` scored 1/15 even with correct titles. The cause was ours: company
+research asked *"does it primarily sell to startups?"* — the question the
+startup-customer gates need — and it decided the ICPs that have no such gate.
+Research for cbre.com returned "large enterprise, does not focus specifically on
+startups", and a Vice Chairman at the largest commercial real-estate firm on
+earth was rejected from an ICP whose `evidence_gate` is `"none"`.
+
+The query now asks what the company *is*. CRE recall went 1/15 → 8/15 on the
+spot, with false positives unchanged at 0/40.
+
+### The classifier was not deterministic, and that is an acceptance criterion
+
+Ten borderline CRE leads, three identical runs: **seven returned a different
+label at least once.** The racing hedge in the model client fires a second
+request and takes whichever replica answers first, and replicas disagree at
+temperature 0.
+
+The hedge is now off for classification, and — because a language model is not a
+pure function — the label is cached against the evidence that produced it, keyed
+by registry and prompt version. Same input, same label, by construction; change
+a registry definition and every affected lead is reclassified. Re-measured:
+**0/10 unstable**. `X-Classification` reports `fresh` or `cached`.
+
+Note what this does and does not buy: it freezes the answer, it does not improve
+it. A borderline lead is still decided by one model call, and that call is now
+permanent until a version changes.
 
 ### The other half: the role lists are too narrow
 
