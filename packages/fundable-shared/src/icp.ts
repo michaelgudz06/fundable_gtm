@@ -29,7 +29,21 @@
  * disagreement can be measured rather than assumed away.
  */
 
-import { answer, type ExaLedger } from "./exa.js";
+import { answer, ExaError, type ExaLedger } from "./exa.js";
+
+/**
+ * Infrastructure failure during classification. Distinct from "Not Core ICP",
+ * which is a JUDGMENT. QA caught the difference the hard way: a dead fetch was
+ * returned as a confident Not Core verdict with HTTP 200, which a caller would
+ * happily write to HubSpot. A failure must surface as an error the caller can
+ * retry, never as a label.
+ */
+export class ClassificationError extends Error {
+  constructor(message: string, readonly cause_kind: "model" | "research") {
+    super(message);
+    this.name = "ClassificationError";
+  }
+}
 import { MODEL_PLAN, complete, parseJson, type Usage } from "./openrouter.js";
 
 // ---------------------------------------------------------------------------
@@ -279,8 +293,11 @@ export async function classifyIcp(
         warnings,
       };
     } catch (err) {
-      warnings.push(`Titled classification failed: ${(err as Error).message.slice(0, 140)}`);
-      return notCore("classification failed", "titled", inputs, warnings);
+      if (err instanceof ClassificationError) throw err;
+      throw new ClassificationError(
+        `Titled classification failed: ${(err as Error).message.slice(0, 140)}`,
+        "model"
+      );
     }
   }
 
@@ -304,8 +321,11 @@ export async function classifyIcp(
       const a = await answer(companyResearchQuery(domain), exaLedger);
       research = a.text;
     } catch (err) {
-      warnings.push(`Company research failed: ${(err as Error).message.slice(0, 140)}`);
-      return notCore("could not research the company behind the domain", "email_only", { email, domain }, warnings);
+      // A failed research CALL is infrastructure; an empty ANSWER is evidence.
+      throw new ClassificationError(
+        `Company research failed: ${(err as Error).message.slice(0, 140)}`,
+        err instanceof ExaError ? "research" : "model"
+      );
     }
   }
   if (!research.trim()) {
@@ -338,7 +358,10 @@ export async function classifyIcp(
       warnings,
     };
   } catch (err) {
-    warnings.push(`Email-only classification failed: ${(err as Error).message.slice(0, 140)}`);
-    return notCore("classification failed", "email_only", inputs, warnings);
+    if (err instanceof ClassificationError) throw err;
+    throw new ClassificationError(
+      `Email-only classification failed: ${(err as Error).message.slice(0, 140)}`,
+      "model"
+    );
   }
 }

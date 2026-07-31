@@ -70,6 +70,7 @@ export type { ExaArticle, ExaLedger, ExaPerson, WorkHistoryEntry } from "./exa.j
 
 // ICP classification — two-tier, ported from fundable-scripts.
 export {
+  ClassificationError,
   EMAIL_ONLY_PROMPT,
   FREEMAIL,
   ICPS,
