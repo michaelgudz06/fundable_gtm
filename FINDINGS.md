@@ -152,6 +152,41 @@ inverting the join: resolve our own reference companies once, cache their
 
 ---
 
+## 9. `/people` is ~19s on a cold path and ~2.6s warm, which sets the ceiling for anything calling it live
+
+Found on 2026-07-31 while replaying a real 29-lead list through the
+Personalization API: p95 was 39s, and per-leg timing put ~32s of it inside the
+single call that resolves a LinkedIn URL to a person. Reproduced straight
+against production from a laptop, with nothing of ours in the path:
+
+```bash
+req() { curl -s -o /dev/null -w "%{time_total}s http=%{http_code}\n" \
+  -X POST https://www.tryfundable.ai/api/v1/people \
+  -H "Authorization: Bearer $FUNDABLE_API_KEY" -H 'content-type: application/json' \
+  -d "{\"identifiers\":{\"linkedin_urls\":[\"$1\"]},\"page_size\":1,\"page\":0}"; }
+
+req https://www.linkedin.com/in/jeremy-harper-8945b732   # 19.008s  <- first after idle
+req https://www.linkedin.com/in/max-w-1161541b7          #  2.819s
+# 4 concurrent, distinct slugs                           #  ~4.9-5.5s each
+req https://www.linkedin.com/in/jacovides                #  2.569s  <- warm again
+```
+
+Single-row lookups, so this is not batch size. The pattern — one very slow call
+after idle, fast calls after it — reads like a cold index or connection pool
+rather than per-request work. `/companies` by domain does not show it.
+
+Why it matters beyond us: 2.6s warm is already the floor for any interactive
+surface that resolves a person mid-request, and 19s is past the point where a
+webhook or an n8n step times out. Anything user-facing has to either cache or
+resolve people out of band.
+
+What we did on our side, which is a workaround and not a fix: cache person
+lookups for 30 days (misses included) and stop making other upstream calls wait
+behind this one. That took our p95 from 39.0s to 9.1s without changing a single
+classification.
+
+---
+
 ## Smaller notes
 
 - `investor.location` can be `{}` — an empty object, not null — so
