@@ -1,0 +1,74 @@
+{
+  "version": "2.0.0",
+  "//": "Use-case catalog per SPEC-v2 §3 (USE-001..004): selection returns ONLY entries from this file, primary first, max three, deterministic per ICP. example_alert strings must describe alerts Fundable can actually express — every one below is built from filters verified against the live API (industries, locations, stage/round, employee count, date windows, hiring-plan mentions in deal descriptions). 'Companies expanding into a new geo' has NO structured signal; where the spec's table implies it, the example uses the honest proxy (funded + territory/new-market phrasing from deal text).",
+  "use_cases": {
+    "1": [
+      { "id": "funded-hiring-signals", "name": "Funded companies signaling hiring", "why_relevant": "A fresh raise plus stated hiring plans means they need talent before they have recruiters.", "example_alert": "US startups that raised seed-Series B in the last 7 days and mention growing the team." },
+      { "id": "sector-stage-raises", "name": "Raises filtered to your sector and stage", "why_relevant": "Reach them before other talent shops do.", "example_alert": "AI startups that raised in the last 24 hours, 11-100 employees." }
+    ],
+    "2": [
+      { "id": "funded-companies-in-market", "name": "Recently funded companies in the broker's market", "why_relevant": "A recent raise can precede office expansion.", "example_alert": "Bay Area startups that raised in the past 24 hours." },
+      { "id": "territory-stage-watch", "name": "Territory watch by stage", "why_relevant": "Series B+ raises are the strongest space-demand signal.", "example_alert": "NY companies that raised Series B or later this week." }
+    ],
+    "4": [
+      { "id": "newly-funded-startups", "name": "Newly funded startups, daily", "why_relevant": "Deposits move right after a round closes.", "example_alert": "A daily digest of every startup that raised in your segment." },
+      { "id": "territory-alerts", "name": "Territory alerts with founder contacts", "why_relevant": "First call after the wire lands wins the account.", "example_alert": "SF fintech raises this week, with founder contact info." }
+    ],
+    "5": [
+      { "id": "claim-funded-accounts", "name": "Claim newly funded accounts first", "why_relevant": "Post-raise companies get budget; first rep to claim owns the account.", "example_alert": "Companies in your ICP that raised in the last hour." },
+      { "id": "stealth-emergence", "name": "Stealth and first-raise emergence", "why_relevant": "Accounts nobody has claimed yet.", "example_alert": "Companies emerging from stealth with their first announced round." }
+    ],
+    "6": [
+      { "id": "relevant-active-investors", "name": "Investors active in your space", "why_relevant": "See who is actually writing cheques at your stage before you raise.", "example_alert": "Funds that led seed rounds in your sector in the last 90 days." },
+      { "id": "deal-history-research", "name": "Deal history and round research", "why_relevant": "Know a fund's real activity before the first call.", "example_alert": "Every round a target fund participated in, with dates and co-investors." }
+    ],
+    "7": [
+      { "id": "investor-lists-per-client", "name": "Investor lists matched to each client", "why_relevant": "Ground every intro list in live deal activity rather than a stale database.", "example_alert": "Active seed investors in climate for a client raising now." }
+    ],
+    "8": [
+      { "id": "thesis-monitoring", "name": "Thesis monitoring", "why_relevant": "See every company crossing into your thesis the day it happens.", "example_alert": "B2B SaaS companies raising Series B+ at $20M+ rounds." },
+      { "id": "repeat-founder-signals", "name": "Repeat-founder signals", "why_relevant": "Second-time founders raise faster; be earliest.", "example_alert": "New rounds where the company's founders previously built a funded startup." }
+    ],
+    "9": [
+      { "id": "api-datafeed", "name": "API / data feed", "why_relevant": "Build on live funding, investor, and people data instead of scraping.", "example_alert": "REST access to rounds, investors, and people as they are tracked." },
+      { "id": "mcp-research", "name": "MCP inside Claude/ChatGPT", "why_relevant": "Query the dataset from the tools your team already uses.", "example_alert": "Fundable MCP connected to your assistant for company research." }
+    ],
+    "10": [
+      { "id": "new-geo-entry", "name": "Companies entering new geographies", "why_relevant": "Funded companies moving into a new market need cross-border payments and FX support.", "example_alert": "Funded startups whose round announcements mention international or new-market expansion." },
+      { "id": "funded-international", "name": "Funded international startups", "why_relevant": "A raise outside your home market is a cross-border moment by definition.", "example_alert": "European startups raising US rounds this month." }
+    ],
+    "11": [
+      { "id": "hiring-headcount-signals", "name": "Hiring and headcount signals with HR buyers", "why_relevant": "Post-raise headcount growth is when payroll and PEO decisions get made.", "example_alert": "Raises this week that mention hiring plans, with People/HR contacts." },
+      { "id": "new-geo-hr", "name": "New-geography signals", "why_relevant": "A company hiring in a new country needs an employer of record fast.", "example_alert": "Funded startups whose announcements mention expanding the team internationally." }
+    ],
+    "12": [
+      { "id": "post-raise-insurance", "name": "Post-raise buying moments", "why_relevant": "D&O and cyber get bought right after the round closes.", "example_alert": "Series A+ raises this week with finance and operations contacts." }
+    ],
+    "13": [
+      { "id": "upmarket-readiness", "name": "Funded startups moving upmarket", "why_relevant": "Compliance gets bought when a funded startup starts selling to bigger customers.", "example_alert": "B2B startups that raised Series A/B in the last 30 days." }
+    ],
+    "14": [
+      { "id": "fresh-raise-hiring", "name": "Fresh raises with hiring plans", "why_relevant": "Reach them the week the hiring budget appears.", "example_alert": "Raises in the last 7 days mentioning team growth, with recruiting contacts." }
+    ],
+    "15": [
+      { "id": "post-raise-finance", "name": "Post-raise finance needs", "why_relevant": "New money means audits, bookkeeping, and a finance stack decision.", "example_alert": "Seed and Series A raises this week, with founder contacts." }
+    ],
+    "16": [
+      { "id": "funded-ready-to-spend", "name": "Newly funded companies ready to spend", "why_relevant": "Describe your ICP once; get pinged when a matching company raises and has budget.", "example_alert": "US companies Series B+ that raised in the last 24 hours." }
+    ],
+    "17": [
+      { "id": "post-raise-legal", "name": "Post-raise legal needs", "why_relevant": "Rounds create financing docs, new entities, and hiring paperwork.", "example_alert": "First-time raises this month, with founder contacts." }
+    ],
+    "18": [
+      { "id": "raise-launch-signals", "name": "Raise and launch signals with marketing contacts", "why_relevant": "Announcement week is when startups buy marketing and PR help.", "example_alert": "Seed-Series A raises this week in consumer, with marketing contacts." }
+    ],
+    "19": [
+      { "id": "thesis-deal-alerts", "name": "Thesis-based deal alerts", "why_relevant": "See every round in your thesis the day it is announced, not in next month's newsletter.", "example_alert": "Developer-tools rounds under $15M, weekly." },
+      { "id": "portfolio-monitoring", "name": "Portfolio and milestone monitoring", "why_relevant": "Know when a portfolio or watchlist company raises, before it is news.", "example_alert": "Any new round for the 40 companies on your watchlist." }
+    ],
+    "20": [
+      { "id": "exact-icp-funded-accounts", "name": "Funded accounts matching your exact ICP", "why_relevant": "Describe your ICP in natural language; get pinged when a matching company raises.", "example_alert": "Your ICP description, evaluated against every new round hourly." },
+      { "id": "enriched-buyers", "name": "Enriched buyer contacts", "why_relevant": "Rounds arrive with the people you would actually reach out to.", "example_alert": "New raises in your segment with verified buyer contact info." }
+    ]
+  }
+}
