@@ -15,6 +15,7 @@ import { scoreConfidence, TEMPLATE_ONLY_BELOW } from "../src/lib/pipeline/confid
 import { parseRequest } from "../src/lib/pipeline/types";
 import { cacheKey } from "../src/lib/pipeline/resolve";
 import { loadSenderContext } from "../src/lib/pipeline/sender";
+import { senderContextIds } from "../src/lib/config-registry";
 
 // Shaped from the live probe of ramp.com, trimmed to the fields the pipeline reads.
 const RAMP: Company = {
@@ -320,9 +321,22 @@ describe("sender context", () => {
     assert.ok(sender.sender_facts.length >= 1);
   });
 
-  test("unknown name is a warning, not an error", () => {
+  test("unknown name is a warning, not an error, and names the known ones", () => {
     const { sender, warnings } = loadSenderContext("does_not_exist");
     assert.equal(sender, null);
-    assert.ok(warnings.some((w) => /not found/.test(w)));
+    assert.ok(warnings.some((w) => /not registered/.test(w)), warnings.join("; "));
+    // The message lists what IS available, so a typo is self-diagnosing.
+    assert.ok(warnings.some((w) => /default/.test(w)), warnings.join("; "));
+  });
+
+  test("every registered sender context is well-formed", () => {
+    // The registry is compiled in, so a malformed block is a build-time problem
+    // rather than a request-time surprise. This asserts that end of the bargain.
+    for (const id of senderContextIds()) {
+      const { sender, warnings } = loadSenderContext(id);
+      assert.ok(sender, `${id}: ${warnings.join("; ")}`);
+      assert.equal(sender.id, id, `${id}: registry key must match the file's own id`);
+      assert.ok(Array.isArray(sender.sender_facts) && sender.sender_facts.length > 0, id);
+    }
   });
 });

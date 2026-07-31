@@ -9,32 +9,16 @@
  */
 
 import Link from "next/link";
-import { readdirSync } from "node:fs";
-import { join, resolve } from "node:path";
 
-import { loadVoice, optionalEnv } from "@fundable/shared";
+import { optionalEnv } from "@fundable/shared";
+
+import { getVoice, senderContextIds } from "../../lib/config-registry";
 
 export const dynamic = "force-dynamic";
 
-function senderContexts(): string[] {
-  let dir = process.cwd();
-  for (let i = 0; i < 6; i++) {
-    try {
-      const files = readdirSync(join(dir, "config", "sender")).filter((f) => f.endsWith(".json"));
-      if (files.length) return files.map((f) => f.replace(/\.json$/, "")).sort();
-    } catch {
-      /* keep walking */
-    }
-    const parent = resolve(dir, "..");
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return [];
-}
-
 export default function GuidePage() {
-  const voice = loadVoice("jacob");
-  const contexts = senderContexts();
+  const voice = getVoice("jacob");
+  const contexts = senderContextIds();
   const keySet = !!optionalEnv("PERSONALIZE_API_KEY");
 
   return (

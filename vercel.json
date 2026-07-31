@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build --workspace @fundable/api",
+  "installCommand": "npm install",
+  "outputDirectory": "apps/api/.next",
+  "framework": "nextjs"
+}
