@@ -106,9 +106,12 @@ export function asCompanyName(raw: string): string | null {
   if (!v) return null;
   if (v.includes(":")) return null; // label-like structure, not a name
   if (v.split(" ").length > 10) return null; // a name is not a sentence
-  // A sentence boundary is a terminator after a real word. "W. Michael Tuman,
-  // D.M.D." — a genuine row from the visitor list — is initials, not prose.
-  if (/[a-z][.!?]\s+\S/.test(v)) return null;
+  // Prose is identified by its verbs, not its punctuation. Real names on the
+  // visitor list are full of sentence-looking abbreviations — "Oppenheimer & Co.
+  // Inc.", "W. Michael Tuman, D.M.D." — and none of them predicate anything.
+  if (/\b(is|are|was|were|sells?|selling|provides?|offers?|helps?|serves?|specializes?|focuses|targets?)\b/i.test(v)) {
+    return null;
+  }
   return v;
 }
 
