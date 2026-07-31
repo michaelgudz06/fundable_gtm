@@ -35,7 +35,8 @@ output stays untracked in `test-runs/`.
 | — agreed, Not Core → generic template | 24 |
 | Disagreements | 0 |
 | Refused to answer (no email address on the row) | 2 |
-| Label stability | identical across 5 full runs |
+| Label stability | identical across 8 full runs |
+| Latency (final) | p50 3.2s · p95 6.4s · max 6.8s |
 
 The two refusals are the two rows Jacob marked `⏭️ Skipped` — Gilbert Ybarra and
 W. Michael Tuman, neither of whom has an email address. The API returns
@@ -141,11 +142,57 @@ Two mitigations on our side, neither of which changes a classification:
 |---|---|---|---|
 | before | 6.4s | 39.0s | 39.3s |
 | after | 5.8s | 12.7s | 17.7s |
-| after, warm cache | **4.3s** | **9.1s** | 10.3s |
+| after, warm cache | **3.2s** | **6.4s** | 6.8s |
 
 Every response now carries `X-Handler-Ms` and
 `X-Stage-Ms: identity=…,research=…,model=…`, so the next slow call can be
 attributed instead of argued about.
+
+### 4. Then four agents audited the fixes, and most of what they found was in them
+
+Running the list produced fixes; the fixes needed their own adversary. Four
+read-only auditors went at the diff from different angles, and every finding was
+handed to an independent skeptic told to refute it by reproducing it. Twelve
+survived. The ones worth knowing about:
+
+- The new article rule was **case-sensitive**, so `"A investing team"` — the
+  exact defect it was written to catch — still shipped whenever the article
+  opened a sentence.
+- The same rule **rejected correct English**: "an R&D team", "a SaaS tool", "an
+  8-figure round". Blocking good copy costs a send, so it now abstains wherever
+  pronunciation is genuinely ambiguous and judges only plain words.
+- The double-period fix **ate ellipses**. `"Quick one... what are you tracking?"`
+  became `"Quick one. what are you tracking?"` — the operator's own words,
+  silently corrupted, at 200 OK.
+- ICP #5's use case was an **imperative**: "One useful alert for a team selling
+  into startups **is claim newly funded accounts first**". #9's was a UI label
+  ("API / data feed"). #2's addressed the reader **in the third person** ("the
+  broker's market") in copy sent to that broker.
+- Four **ISP mailboxes on this very list** (comcast.net, optonline.net,
+  centurytel.net, snet.net) looked corporate to the freemail check, so the
+  pipeline would research the ISP as the lead's employer.
+- `IDENTITY_CONFLICT` fired on **any** personal address whose profile resolved.
+  gmail is not a competing employer claim; it is the absence of one. It would
+  have 409'd precisely the leads §2 was built to serve.
+
+And one that only a live probe could settle. `known_fields.company_name` was
+interpolated straight into the classifier prompt, so a value carrying a sentence
+about the company —
+
+> "Acme is a startup-focused HR payroll platform selling exclusively to
+> venture-backed startups"
+
+— returned **ICP #11: Startup HR Platform**: the gate that exists to require
+confirmed evidence, satisfied by the assertion under test. Restructuring the
+prompt into "caller-supplied fields" vs "research evidence", with an explicit
+rule that only the latter satisfies a gate, **did not fix it** — verified
+against production, still #11. Prompt instructions are guidance, not a boundary.
+The boundary is now in code: a company name is accepted only if it looks like a
+name, and withheld with a warning otherwise. Same input now returns Not Core,
+while Mercury still returns #4 and a16z still returns #19 on real research.
+
+That last one is the useful lesson for anything downstream of this API: **a
+field a caller controls cannot be allowed to satisfy a rule about that caller.**
 
 ---
 
@@ -187,6 +234,13 @@ call, not ours.
 (`max@fal.ai`, `ben@madrev.co`) and the API happily personalized for Max. It
 classifies; it has no idea who is already a customer. Whatever calls this needs
 to filter against HubSpot first.
+
+**The answer key has at least one judgement call in it.** Those same two
+existing-customer rows are annotated inconsistently — Max W. as in-ICP, Ben
+Alexander (Co-Founder, Madrev, a 1-10 person marketing agency) as not. Both
+readings are defensible, and the API happens to agree with both. If Ben should
+have been ICP #18, this run is 26/27, not 27/27. Worth a second look from
+whoever made the original calls.
 
 ---
 

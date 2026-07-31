@@ -97,19 +97,25 @@ async function callOne(base: string, key: string, row: Row, withDomain: boolean)
   const started = Date.now();
   let status = 0;
   let json: Record<string, unknown> = {};
-  let headers: Record<string, string> = {};
-  try {
-    const res = await fetch(`${base}/api/v1/personalize`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify(request),
-    });
-    status = res.status;
-    for (const [k, v] of res.headers) if (k.toLowerCase().startsWith("x-")) headers[k] = v;
-    json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  } catch (e) {
-    status = 0;
-    json = { error: { code: "TRANSPORT", message: (e as Error).message } };
+  const headers: Record<string, string> = {};
+  // One retry on a client-side transport failure. A dropped socket here is the
+  // harness failing, not the API, and scoring a row as an error because of it
+  // would understate agreement — the opposite of what this run is measuring.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(`${base}/api/v1/personalize`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+        body: JSON.stringify(request),
+      });
+      status = res.status;
+      for (const [k, v] of res.headers) if (k.toLowerCase().startsWith("x-")) headers[k] = v;
+      json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      break;
+    } catch (e) {
+      status = 0;
+      json = { error: { code: "TRANSPORT", message: `${(e as Error).message} (attempt ${attempt + 1})` } };
+    }
   }
   const ms = Date.now() - started;
 
