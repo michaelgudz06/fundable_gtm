@@ -107,21 +107,13 @@ async function runModel(
   return null;
 }
 
-/**
- * Which company do we research, and how?
- *
- * The email domain is the strongest signal when it is corporate, because it is
- * the one fact tied to the person rather than asserted about them. A personal
- * address is not a dead end: the caller usually knows the employer (a website
- * visitor list carries it), and researching that named company is what lets an
- * evidence-gated ICP be confirmed instead of failing closed for want of a lookup.
- */
 export type ResearchTarget = { kind: "domain" | "name"; value: string; query: string };
 
 /** A research call already in flight, so it can overlap the identity lookup. */
 export type ResearchTask = {
   target: ResearchTarget;
-  promise: Promise<{ text?: string; failed?: string }>;
+  /** `ms` is the call's own duration, so an overlapped call still reports it. */
+  promise: Promise<{ text?: string; failed?: string; ms: number }>;
 };
 
 /**
@@ -134,15 +126,25 @@ export type ResearchTask = {
  * judged where every other research failure is judged.
  */
 export function startResearch(target: ResearchTarget, exaLedger: ExaLedger): ResearchTask {
+  const t0 = Date.now();
   return {
     target,
     promise: answer(target.query, exaLedger).then(
-      (a) => ({ text: a.text }),
-      (e) => ({ failed: (e as Error)?.message ?? String(e) })
+      (a) => ({ text: a.text, ms: Date.now() - t0 }),
+      (e) => ({ failed: (e as Error)?.message ?? String(e), ms: Date.now() - t0 })
     ),
   };
 }
 
+/**
+ * Which company do we research, and how?
+ *
+ * The email domain is the strongest signal when it is corporate, because it is
+ * the one fact tied to the person rather than asserted about them. A personal
+ * address is not a dead end: the caller usually knows the employer (a website
+ * visitor list carries it), and researching that named company is what lets an
+ * evidence-gated ICP be confirmed instead of failing closed for want of a lookup.
+ */
 export function researchTarget(input: {
   emailDomain: string;
   companyDomain?: string | undefined;
@@ -204,6 +206,7 @@ export async function classifyV2(
   });
   if (!research && target) {
     const t0 = Date.now();
+    let researchMs = 0;
     // Reuse the in-flight call only when it asked the same question. If the
     // identity lookup changed what we know about the employer, the pre-started
     // research is about a different company and is discarded.
@@ -214,7 +217,12 @@ export async function classifyV2(
     try {
       const settled = inFlight
         ? await inFlight
-        : await answer(target.query, exaLedger).then((a) => ({ text: a.text, failed: undefined }));
+        : await answer(target.query, exaLedger).then((a) => ({
+            text: a.text,
+            failed: undefined,
+            ms: Date.now() - t0,
+          }));
+      researchMs = settled.ms;
       if (settled.failed) throw new Error(settled.failed);
       research = settled.text;
       if (target.kind === "name") {
@@ -226,7 +234,9 @@ export async function classifyV2(
       researchFailed = true;
       warnings.push(`Company research unavailable: ${(err as Error).message.slice(0, 120)}`);
     } finally {
-      timings.research = Date.now() - t0;
+      // The call's own duration, not the wait: research may have been started
+      // before this function was entered and already be resolved.
+      timings.research = researchMs || Date.now() - t0;
     }
   }
 
