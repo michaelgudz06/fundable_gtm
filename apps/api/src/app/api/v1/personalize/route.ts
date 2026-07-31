@@ -27,6 +27,7 @@ import {
   classifyV2,
   researchTarget,
   startResearch,
+  CLASSIFIER_DECISION_VERSION,
   CLASSIFIER_PROMPT_VERSION,
 } from "../../../../lib/v2/classify";
 import {
@@ -126,7 +127,7 @@ function classificationKey(input: {
     (input.companyDomain ?? "").trim().toLowerCase(),
   ].join("|");
   const digest = createHash("sha256").update(material).digest("hex").slice(0, 32);
-  return `cls:${REGISTRY_VERSIONS.icp_registry}:${CLASSIFIER_PROMPT_VERSION}:${digest}`;
+  return `cls:${REGISTRY_VERSIONS.icp_registry}:${CLASSIFIER_DECISION_VERSION}:${digest}`;
 }
 
 /**
