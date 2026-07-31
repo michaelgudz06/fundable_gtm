@@ -1,5 +1,6 @@
 {
-  "version": "2.0.0",
+  "version": "2.1.0",
+  "//prose": "2.1.0: `name` is dropped into carrier sentences (\"One useful alert for X is ___\"), so it must be a NOUN PHRASE in the recipient's second person. Fixed here: an imperative (\"Claim newly funded accounts first\"), a UI label (\"API / data feed\"), and a third-person reference to the reader (\"the broker's market\").",
   "//": "Use-case catalog per SPEC-v2 §3 (USE-001..004): selection returns ONLY entries from this file, primary first, max three, deterministic per ICP. example_alert strings must describe alerts Fundable can actually express — every one below is built from filters verified against the live API (industries, locations, stage/round, employee count, date windows, hiring-plan mentions in deal descriptions). 'Companies expanding into a new geo' has NO structured signal; where the spec's table implies it, the example uses the honest proxy (funded + territory/new-market phrasing from deal text).",
   "use_cases": {
     "1": [
@@ -7,7 +8,7 @@
       { "id": "sector-stage-raises", "name": "Raises filtered to your sector and stage", "why_relevant": "Reach them before other talent shops do.", "example_alert": "AI startups that raised in the last 24 hours, 11-100 employees." }
     ],
     "2": [
-      { "id": "funded-companies-in-market", "name": "Recently funded companies in the broker's market", "why_relevant": "A recent raise can precede office expansion.", "example_alert": "Bay Area startups that raised in the past 24 hours." },
+      { "id": "funded-companies-in-market", "name": "Recently funded companies in your market", "why_relevant": "A recent raise can precede office expansion.", "example_alert": "Bay Area startups that raised in the past 24 hours." },
       { "id": "territory-stage-watch", "name": "Territory watch by stage", "why_relevant": "Series B+ raises are the strongest space-demand signal.", "example_alert": "NY companies that raised Series B or later this week." }
     ],
     "4": [
@@ -15,7 +16,7 @@
       { "id": "territory-alerts", "name": "Territory alerts with founder contacts", "why_relevant": "First call after the wire lands wins the account.", "example_alert": "SF fintech raises this week, with founder contact info." }
     ],
     "5": [
-      { "id": "claim-funded-accounts", "name": "Claim newly funded accounts first", "why_relevant": "Post-raise companies get budget; first rep to claim owns the account.", "example_alert": "Companies in your ICP that raised in the last hour." },
+      { "id": "claim-funded-accounts", "name": "First claim on newly funded accounts", "why_relevant": "Post-raise companies get budget; first rep to claim owns the account.", "example_alert": "Companies in your ICP that raised in the last hour." },
       { "id": "stealth-emergence", "name": "Stealth and first-raise emergence", "why_relevant": "Accounts nobody has claimed yet.", "example_alert": "Companies emerging from stealth with their first announced round." }
     ],
     "6": [
@@ -30,7 +31,7 @@
       { "id": "repeat-founder-signals", "name": "Repeat-founder signals", "why_relevant": "Second-time founders raise faster; be earliest.", "example_alert": "New rounds where the company's founders previously built a funded startup." }
     ],
     "9": [
-      { "id": "api-datafeed", "name": "API / data feed", "why_relevant": "Build on live funding, investor, and people data instead of scraping.", "example_alert": "REST access to rounds, investors, and people as they are tracked." },
+      { "id": "api-datafeed", "name": "API and data-feed access", "why_relevant": "Build on live funding, investor, and people data instead of scraping.", "example_alert": "REST access to rounds, investors, and people as they are tracked." },
       { "id": "mcp-research", "name": "MCP inside Claude/ChatGPT", "why_relevant": "Query the dataset from the tools your team already uses.", "example_alert": "Fundable MCP connected to your assistant for company research." }
     ],
     "10": [

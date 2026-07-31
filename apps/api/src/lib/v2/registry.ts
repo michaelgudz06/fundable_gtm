@@ -93,11 +93,15 @@ for (const i of icpRegistry.icps) {
   // Prose descriptors are a build-time contract, not a nice-to-have: the
   // composer inflects the article itself, so a descriptor that carries its own
   // article ("an investing team") would compose to "a an investing team".
-  if (!i.email_descriptor?.trim()) fail(`ICP #${i.number} has no email_descriptor`);
-  if (/^(a|an|the)\s/i.test(i.email_descriptor)) {
-    fail(`ICP #${i.number} email_descriptor must not begin with an article: "${i.email_descriptor}"`);
+  // Trim first: the guards below describe the string the composer will USE, and
+  // " an investing team" would otherwise slip past both and compose to "a an …".
+  const descriptor = i.email_descriptor?.trim();
+  if (!descriptor) fail(`ICP #${i.number} has no email_descriptor`);
+  if (/^(a|an|the)\s/i.test(descriptor)) {
+    fail(`ICP #${i.number} email_descriptor must not begin with an article: "${descriptor}"`);
   }
-  if (/[.!?]$/.test(i.email_descriptor)) fail(`ICP #${i.number} email_descriptor must not be a sentence`);
+  if (/[.!?]$/.test(descriptor)) fail(`ICP #${i.number} email_descriptor must not be a sentence`);
+  i.email_descriptor = descriptor;
 }
 
 const useCaseCatalog = useCaseCatalogJson as {
