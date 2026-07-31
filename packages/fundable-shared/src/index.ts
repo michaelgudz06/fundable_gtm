@@ -81,5 +81,12 @@ export { blockingIssues, correctionPrompt as verifyCorrectionPrompt, verifyCopy 
 export type { Evidence, EvidenceSource, Severity, VerifyInput, VerifyIssue } from "./verify.js";
 
 // Voice.
-export { checkLength, loadVoice, provenanceWarning, stripEmDashes, wordCount } from "./voice.js";
+export {
+  checkLength,
+  loadVoice,
+  provenanceWarning,
+  stripEmDashes,
+  validateVoice,
+  wordCount,
+} from "./voice.js";
 export type { Channel, ChannelLimits, LengthCheck, VoiceProfile } from "./voice.js";

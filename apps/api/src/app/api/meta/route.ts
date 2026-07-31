@@ -7,46 +7,12 @@
  * check on entry, and the sender-context names are internal config.
  */
 
-import { readdirSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-
-import { loadVoice, provenanceWarning } from "@fundable/shared";
+import { provenanceWarning } from "@fundable/shared";
 
 import { checkAuth } from "../../../lib/auth";
+import { getVoice, senderContextIds } from "../../../lib/config-registry";
 
 export const runtime = "nodejs";
-
-function senderContextIds(): string[] {
-  // Same root-walk as the pipeline's sender loader: cwd is apps/api under
-  // `next dev`, the repo root in other harnesses.
-  let dir = process.cwd();
-  for (let i = 0; i < 6; i++) {
-    try {
-      const candidate = join(dir, "config", "sender");
-      const files = readdirSync(candidate).filter((f) => f.endsWith(".json"));
-      if (files.length) {
-        // Validate each parses; a broken block should not appear pickable.
-        return files
-          .filter((f) => {
-            try {
-              JSON.parse(readFileSync(join(candidate, f), "utf8"));
-              return true;
-            } catch {
-              return false;
-            }
-          })
-          .map((f) => f.replace(/\.json$/, ""))
-          .sort();
-      }
-    } catch {
-      /* keep walking */
-    }
-    const parent = resolve(dir, "..");
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return [];
-}
 
 export async function GET(req: Request): Promise<Response> {
   const auth = checkAuth(req);
@@ -57,7 +23,7 @@ export async function GET(req: Request): Promise<Response> {
     );
   }
 
-  const voice = loadVoice("jacob");
+  const voice = getVoice("jacob");
   return Response.json({
     sender_contexts: senderContextIds(),
     voice: {

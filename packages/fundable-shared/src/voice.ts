@@ -67,6 +67,35 @@ function configDir(): string {
 
 const cache = new Map<string, VoiceProfile>();
 
+/**
+ * Validate an already-parsed profile.
+ *
+ * Split out from `loadVoice` because a serverless bundle cannot rely on reading
+ * a JSON file from a walked-up directory at request time — the app imports the
+ * profile statically and validates it here, while tests and scripts keep using
+ * the filesystem path below.
+ */
+export function validateVoice(parsed: unknown, id = "jacob"): VoiceProfile {
+  const profile = parsed as VoiceProfile;
+
+  // Fail loudly at load rather than producing voiceless copy at request time.
+  const missing: string[] = [];
+  if (!profile?.id) missing.push("id");
+  if (!profile?.provenance) missing.push("provenance");
+  if (!profile?.persona) missing.push("persona");
+  if (!profile?.limits?.email?.max_words) missing.push("limits.email.max_words");
+  if (!profile?.limits?.linkedin?.max_words) missing.push("limits.linkedin.max_words");
+  if (missing.length) {
+    throw new Error(`Voice profile "${id}" is missing required field(s): ${missing.join(", ")}`);
+  }
+  if (profile.provenance !== "placeholder" && profile.provenance !== "real_examples") {
+    throw new Error(
+      `Voice profile "${id}" has provenance "${profile.provenance}"; expected "placeholder" or "real_examples".`
+    );
+  }
+  return profile;
+}
+
 export function loadVoice(id = "jacob"): VoiceProfile {
   const cached = cache.get(id);
   if (cached) return cached;
@@ -79,24 +108,7 @@ export function loadVoice(id = "jacob"): VoiceProfile {
     throw new Error(`Voice profile "${id}" could not be read at ${path}: ${(err as Error).message}`);
   }
 
-  const profile = parsed as VoiceProfile;
-
-  // Fail loudly at load rather than producing voiceless copy at request time.
-  const missing: string[] = [];
-  if (!profile.id) missing.push("id");
-  if (!profile.provenance) missing.push("provenance");
-  if (!profile.persona) missing.push("persona");
-  if (!profile.limits?.email?.max_words) missing.push("limits.email.max_words");
-  if (!profile.limits?.linkedin?.max_words) missing.push("limits.linkedin.max_words");
-  if (missing.length) {
-    throw new Error(`Voice profile "${id}" is missing required field(s): ${missing.join(", ")}`);
-  }
-  if (profile.provenance !== "placeholder" && profile.provenance !== "real_examples") {
-    throw new Error(
-      `Voice profile "${id}" has provenance "${profile.provenance}"; expected "placeholder" or "real_examples".`
-    );
-  }
-
+  const profile = validateVoice(parsed, id);
   cache.set(id, profile);
   return profile;
 }

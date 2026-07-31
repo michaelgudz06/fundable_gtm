@@ -7,11 +7,12 @@
 
 import Link from "next/link";
 
-import { loadVoice, optionalEnv, provenanceWarning } from "@fundable/shared";
+import { optionalEnv, provenanceWarning } from "@fundable/shared";
+
+import { getVoice } from "../lib/config-registry";
+import { checkHealth, type Dep } from "../lib/health";
 
 export const dynamic = "force-dynamic";
-
-type Dep = { name: string; configured: boolean; reachable: boolean | null; detail: string };
 
 const USE_CASES = [
   {
@@ -54,18 +55,18 @@ const PIPELINE = [
 ];
 
 export default async function Home() {
-  const voice = loadVoice("jacob");
+  const voice = getVoice("jacob");
   const warning = provenanceWarning(voice);
   const keySet = !!optionalEnv("PERSONALIZE_API_KEY");
 
+  // Called directly rather than self-fetched over HTTP — a hardcoded hostname
+  // works locally and breaks everywhere else.
   let deps: Dep[] = [];
   let healthOk = false;
   try {
-    // Same-origin fetch of our own health route; force-dynamic keeps it fresh.
-    const res = await fetch("http://localhost:3111/api/health", { cache: "no-store" });
-    const json = (await res.json()) as { ok: boolean; deps: Dep[] };
-    deps = json.deps;
-    healthOk = json.ok;
+    const health = await checkHealth();
+    deps = health.deps;
+    healthOk = health.ok;
   } catch {
     deps = [];
   }
