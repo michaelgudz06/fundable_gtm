@@ -212,6 +212,28 @@ function missingContext(templateBody: string, ctx: ComposeContext): ComposeIssue
   );
 }
 
+/**
+ * Checks that hold for a caller's template regardless of how the lead classifies.
+ *
+ * These run BEFORE classification, because a template containing HTML is broken
+ * whoever it is addressed to — and because a Not Core lead never reaches the
+ * caller-template branch at all, so without this an invalid template would pass
+ * silently until the first core lead came along and 422'd in production.
+ *
+ * Deliberately limited to properties of the template TEXT. Anything needing the
+ * resolved context (a missing name, an unsupported claim) is judged later, where
+ * the context actually exists.
+ */
+export function validateTemplateSource(templateBody: string): ComposeIssue[] {
+  const issues: ComposeIssue[] = [];
+  if (/<[a-z][\s\S]*?>/i.test(templateBody)) issues.push({ rule: "no-html", detail: "markup detected" });
+  if (/^subject\s*:/im.test(templateBody)) {
+    issues.push({ rule: "no-subject-line", detail: "subject header in template" });
+  }
+  if (!templateBody.trim()) issues.push({ rule: "empty-body", detail: "no content" });
+  return issues;
+}
+
 export function composeFromTemplate(input: {
   template: TemplateEntry;
   useCases: UseCase[];
