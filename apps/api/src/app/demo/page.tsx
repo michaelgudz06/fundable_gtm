@@ -79,47 +79,52 @@ const DOT: Record<StageEvent["status"], string> = {
 // ---------------------------------------------------------------------------
 // Sample mode — canned data so the UI can be seen (and was verified) without a
 // key. Loudly labeled; grants no API access. The payload below is a REAL run
-// captured on 2026-07-29 (ramp.com), so what it shows is what live looks like.
+// captured from production (ramp.com, cold + investor overlap), so it is exactly what a
+// live run looks like.
 // ---------------------------------------------------------------------------
 
 const SAMPLE_EVENTS: StageEvent[] = [
   { t: 0, stage: "resolve", status: "start", detail: "Resolving ramp.com + https://www.linkedin.com/in/eglyman" },
-  { t: 427, stage: "resolve", status: "done", detail: "ramp.com → Ramp (series f, 2026-06-04) · LinkedIn → Eric Glyman, Co-Founder, CEO (cache hit, 0 credits)" },
-  { t: 428, stage: "enrich", status: "done", detail: "5 prospect facts from Fundable + 2 sender facts" },
-  { t: 428, stage: "tie", status: "skipped", detail: "investor-overlap ties ship in M3" },
-  { t: 428, stage: "angle", status: "start", detail: "picking one angle from 5 facts (max 3)" },
-  { t: 1985, stage: "angle", status: "done", detail: "the_raise (3 facts)" },
-  { t: 1985, stage: "write", status: "start", detail: "drafting the email in Jacob's voice" },
-  { t: 3534, stage: "write", status: "done", detail: '56 words, subject "ramp\'s series f"' },
-  { t: 3534, stage: "verify", status: "done", detail: "clean — every claim traces to evidence (0 advisory notes)" },
-  { t: 3534, stage: "done", status: "done", detail: "personalized — every claim verified against evidence" },
+  { t: 657, stage: "resolve", status: "done", detail: "ramp.com \u2192 Ramp (series f, 2026-06-04) \u00b7 LinkedIn \u2192 Eric Glyman, Co-Founder, CEO (cache hit, 0 credits)" },
+  { t: 659, stage: "enrich", status: "start", detail: "Exa: recent coverage + person career history" },
+  { t: 980, stage: "enrich", status: "done", detail: "Exa cache hit ($0.000): 3 article(s)" },
+  { t: 981, stage: "enrich", status: "done", detail: "8 prospect facts + 2 sender facts" },
+  { t: 981, stage: "tie", status: "start", detail: "computing ties against sender_context EXAMPLE_not_real_customers" },
+  { t: 2531, stage: "tie", status: "done", detail: "5 ties: shared_investor, shared_investor, same_city, same_stage, repeat_founder" },
+  { t: 2532, stage: "angle", status: "start", detail: "picking one angle from 13 facts (max 3)" },
+  { t: 3591, stage: "angle", status: "done", detail: "investor_overlap (3 facts)" },
+  { t: 3592, stage: "write", status: "start", detail: "drafting the email in the configured voice" },
+  { t: 5066, stage: "write", status: "done", detail: "37 words, subject: insight partners backs ramp and anthropic" },
+  { t: 5066, stage: "verify", status: "done", detail: "clean \u2014 every claim traces to evidence (0 advisory notes)" },
+  { t: 5066, stage: "done", status: "done", detail: "personalized \u2014 every claim verified against evidence" },
 ];
 
 const SAMPLE_RESPONSE: PersonalizeResponse = {
   status: "personalized",
-  confidence: 0.9,
-  subject: "ramp's series f",
-  body: "Hi Eric,\n\nRamp raised a $750M Series F at a $44B valuation on June 4.\n\nFundable tracks rounds in real time, so our customers get alerts the day a deal closes.\n\nWorth a look at fundable.ai?\n\nJacob",
-  angle: "the_raise",
+  confidence: 0.95,
+  subject: "insight partners backs ramp and anthropic",
+  body: "Hi Eric,\n\nInsight Partners is an investor in both Ramp and Anthropic.\n\nWe track those investor-portfolio overlaps in real time at Fundable, so GTM teams can see exactly which funds are behind which companies.\n\nWorth a look?",
+  angle: "investor_overlap",
   evidence: [
-    { fact: "Ramp raised a series f round of $750M at a $44B valuation on 2026-06-04.", source: "fundable", endpoint: "/companies", confidence: 1 },
-    { fact: "Ramp, a corporate spend and finance infrastructure platform, raised $750 million in a Series F at a $44 billion valuation led by ICONIQ, GIC, and Ontario Teachers' Pension Plan.", source: "fundable", endpoint: "/companies", confidence: 1 },
-    { fact: "Eric Glyman is Co-Founder, CEO at Ramp.", source: "fundable", endpoint: "/people", confidence: 0.9 },
+    { fact: "Insight Partners is an investor in both Ramp and Anthropic.", source: "fundable", endpoint: "/investors", confidence: 1 },
+    { fact: "Sequoia Capital is an investor in Ramp, and also in Anthropic, Stripe, and Figma.", source: "fundable", endpoint: "/investors", confidence: 1 },
+    { fact: "Ramp and our team are both based in New York.", source: "fundable", endpoint: "/companies", confidence: 1 },
     { fact: "Fundable (fundable.ai) tracks startup funding rounds, investors, and people in real time, for VCs, founders, and GTM teams.", source: "sender_context", confidence: 1 },
+    { fact: "Fundable maps which investors back which companies, so overlaps between funds and portfolios are queryable.", source: "sender_context", confidence: 1 },
   ],
-  resolved: { person_id: "48153d29-…", company_id: "f4a7c292-…", company: "Ramp", domain: "ramp.com" },
+  resolved: { person_id: "48153d29", company_id: "f4a7c292", company: "Ramp", domain: "ramp.com" },
   warnings: ["Voice profile is a placeholder adapted from LinkedIn posts, not tuned on real sent emails. Review copy before sending."],
-  usage: { fundable_credits: 0, exa_cost_usd: 0, llm_tokens: 1707, ms: 3604 },
+  usage: { fundable_credits: 5, exa_cost_usd: 0, llm_tokens: 2295, ms: 5066 },
 };
 
 const SAMPLE_META: Meta = {
-  sender_contexts: ["default"],
+  sender_contexts: ["EXAMPLE_not_real_customers", "default"],
   voice: {
     id: "jacob",
     provenance: "placeholder",
     warning: "Voice profile is a placeholder adapted from LinkedIn posts, not tuned on real sent emails. Review copy before sending.",
   },
-  triggers_implemented: ["post-raise"],
+  triggers_implemented: ["post-raise", "sign-up", "website-visitor", "cold"],
 };
 
 // ---------------------------------------------------------------------------
@@ -366,8 +371,7 @@ export default function DemoPage() {
         <div className="demo-voicewarn" style={{ borderColor: "var(--accent)" }}>
           <strong>SAMPLE DATA</strong>
           <span>
-            This is a captured run (ramp.com, 2026-07-29), not live output. Refresh and enter the
-            key to run the real pipeline.
+            A captured production run (ramp.com, cold trigger), not live output. Enter the key to run the real pipeline.
           </span>
         </div>
       )}

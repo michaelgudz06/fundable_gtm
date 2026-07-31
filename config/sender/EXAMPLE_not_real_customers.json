@@ -14,6 +14,6 @@
   "customer_domains": ["brex.com", "stripe.com", "figma.com", "anthropic.com"],
 
   "home_city": "New York",
-  "sender_city_label": "our team in New York",
+  "sender_city_label": "our team",
   "target_stages": ["seed", "series a", "series b", "series c", "series f"]
 }
