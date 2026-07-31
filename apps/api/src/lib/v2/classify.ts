@@ -130,7 +130,12 @@ async function runModel(
           { role: "system", content: buildClassifierPrompt() },
           { role: "user", content: user },
         ],
-        { model: MODEL_PLAN, maxTokens: 250, temperature: 0, hedgeAfterMs: 4000 }
+        // No hedge here, deliberately. The hedge races a second request and
+        // takes whichever replica answers first — and replicas disagree at
+        // temperature 0, which made the same lead classify differently on
+        // consecutive identical calls (7 of 10 borderline CRE leads flipped
+        // across three runs). Latency is worth less than a stable label.
+        { model: MODEL_PLAN, maxTokens: 250, temperature: 0 }
       );
       usage.push(res.usage);
       const parsed = parseJson<{ icp_number?: unknown; reasoning?: unknown }>(res.text);

@@ -46,6 +46,8 @@ import {
   type MessageType,
 } from "../../../../lib/v2/registry";
 
+import { createHash } from "node:crypto";
+
 export const runtime = "nodejs";
 
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
@@ -91,10 +93,41 @@ type Trace = {
   model: number;
   /** Which body the caller actually received — see X-Body-Source. */
   bodySource: "caller_template" | "catalog_template" | "generic_fallback" | "none";
+  /** Whether the label came from the classifier or from the stable cache. */
+  classification: "fresh" | "cached" | "none";
 };
 
 /** Fundable's own TTL for person records elsewhere in this codebase. */
 const PERSON_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const CLASSIFICATION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * "Same normalized identity -> same label on every caller" is the first line of
+ * the spec's acceptance criteria, and it cannot be delegated to the model:
+ * measured, the same borderline lead classified differently on consecutive
+ * identical calls. Removing the racing hedge narrows that, but a language model
+ * is not a pure function and no prompt makes it one.
+ *
+ * So the guarantee is structural. The label is cached against the evidence that
+ * produced it, and the key carries the registry and prompt versions — change a
+ * definition and every affected lead is reclassified; change nothing and the
+ * answer never drifts.
+ */
+function classificationKey(input: {
+  email: string;
+  title?: string | undefined;
+  company?: string | undefined;
+  companyDomain?: string | undefined;
+}): string {
+  const material = [
+    input.email.trim().toLowerCase(),
+    (input.title ?? "").trim().toLowerCase(),
+    (input.company ?? "").trim().toLowerCase(),
+    (input.companyDomain ?? "").trim().toLowerCase(),
+  ].join("|");
+  const digest = createHash("sha256").update(material).digest("hex").slice(0, 32);
+  return `cls:${REGISTRY_VERSIONS.icp_registry}:${CLASSIFIER_PROMPT_VERSION}:${digest}`;
+}
 
 /**
  * Identity lookups are cached because the upstream endpoint is slow on a cold
@@ -121,7 +154,7 @@ async function personCached(
 
 export async function POST(req: Request): Promise<Response> {
   const started = Date.now();
-  const trace: Trace = { identity: 0, research: 0, model: 0, bodySource: "none" };
+  const trace: Trace = { identity: 0, research: 0, model: 0, bodySource: "none", classification: "none" };
   const res = await handle(req, trace);
   res.headers.set("X-Handler-Ms", String(Date.now() - started));
   res.headers.set(
@@ -132,6 +165,7 @@ export async function POST(req: Request): Promise<Response> {
   // their own template — correct per spec, but invisible from the response body,
   // which is exactly how someone ends up believing their copy went out.
   res.headers.set("X-Body-Source", trace.bodySource);
+  res.headers.set("X-Classification", trace.classification);
   return res;
 }
 
@@ -269,10 +303,33 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
     // It never overrides a corporate email domain and never participates in the
     // identity check; it exists so a lead with a personal address is still
     // researchable instead of failing closed for want of a lookup.
-    const cls = await classifyV2(
-      { email, title, company, companyDomain: researchDomain, researchTask },
-      exa
-    );
+    const clsKey = classificationKey({ email, title, company, companyDomain: researchDomain });
+    const cachedCls = (await storage.cacheGet(clsKey, "fundable")) as
+      | { icpNumber: number | null; label: string }
+      | null;
+
+    let cls: Awaited<ReturnType<typeof classifyV2>>;
+    if (cachedCls && typeof cachedCls.label === "string") {
+      cls = {
+        icpNumber: cachedCls.icpNumber ?? null,
+        label: cachedCls.label,
+        reasoning: "cached",
+        path: "titled",
+        usage: [],
+        warnings: [],
+        timings: { research: 0, model: 0 },
+      };
+      trace.classification = "cached";
+    } else {
+      cls = await classifyV2({ email, title, company, companyDomain: researchDomain, researchTask }, exa);
+      await storage.cacheSet(
+        clsKey,
+        "fundable",
+        { icpNumber: cls.icpNumber, label: cls.label },
+        CLASSIFICATION_TTL_MS
+      );
+      trace.classification = "fresh";
+    }
     trace.research = cls.timings.research;
     trace.model = cls.timings.model;
     const entry = cls.icpNumber !== null ? icpByNumber(cls.icpNumber) : null;

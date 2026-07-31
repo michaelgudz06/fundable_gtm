@@ -37,6 +37,13 @@ const PRESETS: Record<string, Probe[]> = {
     { name: "Loralie Ogden", email: "loralie.ogden@cbre.com", title: "First Vice President", company: "CBRE" },
     { name: "Jim McCahon", email: "jim.mccahon@jll.com", title: "Director, Transactions Management", company: "JLL" },
   ],
+  // Titles that ARE in #19's eligible role list, still landing Not Core.
+  investor: [
+    { name: "Jack Leeney", email: "leeney3@aol.com", title: "Managing Partner and Co-Founder", company: "7GC" },
+    { name: "Scott Lopano", email: "scottlopano@gmail.com", title: "Partner", company: "Sweater Ventures" },
+    { name: "Poojan Mehta", email: "pmehta@personstpartners.com", title: "Partner/Co-Founder" },
+    { name: "Roseanne Wincek", email: "rwincek@gmail.com", title: "Co-Founder & Managing Director", company: "Renegade Partners" },
+  ],
 };
 
 async function probe(p: Probe) {
