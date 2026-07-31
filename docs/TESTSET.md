@@ -35,7 +35,7 @@ output stays untracked in `test-runs/`.
 | — agreed, Not Core → generic template | 24 |
 | Disagreements | 0 |
 | Refused to answer (no email address on the row) | 2 |
-| Label stability | identical across 8 full runs |
+| Label stability | identical across 8 full runs — **but see below** |
 | Latency (final) | p50 3.2s · p95 6.4s · max 6.8s |
 
 The two refusals are the two rows Jacob marked `⏭️ Skipped` — Gilbert Ybarra and
@@ -234,6 +234,14 @@ call, not ours.
 (`max@fal.ai`, `ben@madrev.co`) and the API happily personalized for Max. It
 classifies; it has no idea who is already a customer. Whatever calls this needs
 to filter against HubSpot first.
+
+**"Stable across 8 runs" was measured on the wrong rows.** 24 of 27 rows here
+are unambiguous Not Core, and those never move. Re-measured later on ten
+*borderline* CRE leads, seven returned a different label across three identical
+runs. That has since been fixed structurally (the classifier no longer uses the
+racing hedge, and labels are cached against the evidence and registry version),
+but the stability claim on this page should be read as "stable on easy rows",
+which is what it actually demonstrated.
 
 **The answer key has at least one judgement call in it.** Those same two
 existing-customer rows are annotated inconsistently — Max W. as in-ICP, Ben
