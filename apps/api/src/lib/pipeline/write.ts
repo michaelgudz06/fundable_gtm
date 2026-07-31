@@ -179,7 +179,10 @@ export async function writeAndVerify(input: {
     emit({
       stage: "write",
       status: "start",
-      detail: attempt === 0 ? `drafting the ${input.channel} in Jacob's voice` : "corrective rewrite",
+      detail:
+        attempt === 0
+          ? `drafting the ${input.channel} in the ${input.voice.display_name ?? input.voice.id} voice`
+          : "corrective rewrite",
     });
     let raw: string;
     try {

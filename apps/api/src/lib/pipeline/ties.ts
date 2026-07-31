@@ -156,7 +156,9 @@ export async function computeTies(input: {
   if (prospectCity && senderCity && prospectCity.toLowerCase() === senderCity.toLowerCase()) {
     ties.push({
       kind: "same_city",
-      fact: `${company!.name} is based in ${prospectCity}, the same city as ${sender.sender_city_label ?? "the sender"}.`,
+      // Phrased as a shared fact rather than "X is in New York, the same city as
+      // our team in New York" — which is what the naive version produced live.
+      fact: `${company!.name} and ${sender.sender_city_label ?? "the sender"} are both based in ${prospectCity}.`,
       source: "fundable",
       endpoint: "/companies",
       confidence: 1.0,

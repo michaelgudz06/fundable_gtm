@@ -78,8 +78,8 @@ export default async function Home() {
         <h1>Personalization API</h1>
         <p className="ov-lede">
           One endpoint you call before sending any automated email or LinkedIn message. Give it a
-          person and a reason for writing; it returns copy in Jacob&apos;s voice plus the evidence
-          behind every claim. When it cannot find an honest angle, it hands your template back
+          person and a reason for writing; it returns copy in your voice plus the evidence behind
+          every claim. When it cannot find an honest angle, it hands your template back
           untouched and says so.
         </p>
         <div className="ov-cta">
@@ -92,22 +92,15 @@ export default async function Home() {
               : "PERSONALIZE_API_KEY is not set — the demo will report 503 until it is."}
           </span>
         </div>
-        {keySet && (
-          <div className="ov-keyhint">
-            Grab the key with:
-            <code>
-              grep &apos;^PERSONALIZE_API_KEY=&apos;
-              ~/Developer/work/fundable/personalize-api/.env | cut -d= -f2 | pbcopy
-            </code>
-          </div>
-        )}
       </header>
 
       {warning && (
         <div className="ov-banner ov-warn">
-          <strong>Voice is a placeholder.</strong> {warning}{" "}
-          It was adapted from Jacob&apos;s LinkedIn posts, and cold email is a different register.
-          Every response says so until his real sent emails land.
+          <strong>The voice is not tuned yet.</strong> It was inferred from LinkedIn posts,
+          because that is what was available — and cold email is a different register: shorter, no
+          hook, one ask. So the copy below reads competent and generic rather than like a specific
+          person. Every API response carries this warning until it is rebuilt from real sent
+          emails. See <a href="/guide#voice">tuning the voice</a>.
         </div>
       )}
 
@@ -262,17 +255,18 @@ export default async function Home() {
             <h3>Deliberately not yet</h3>
             <ul className="ov-list ov-list-muted">
               <li>
-                <strong>Voice tuning</strong> — blocked on 10-20 of Jacob&apos;s real sent emails.
-                The single thing that decides whether he actually uses this.
+                <strong>Voice tuning</strong> — needs 10-20 of your real sent emails, or your
+                <code> jacob voice</code> skill. The single thing that decides whether this is
+                usable day to day.
               </li>
               <li>
                 <strong>Real customer names</strong> in <code>sender_context</code> — the
-                shared-investor tie is dormant in <code>default</code> until Jacob confirms which
-                customers may be named.
+                shared-investor tie is dormant in <code>default</code> until someone confirms which
+                customers may be named in outbound.
               </li>
               <li>
-                <strong>Lead-investor extraction</strong> — Fundable has no structured lead field;
-                the lead is prose only. Quote it, or extract and accept the risk. Michael&apos;s call.
+                <strong>Lead-investor extraction</strong> — Fundable has no structured lead field; the
+                lead exists only as prose. Quote it, or extract and accept the risk. Open decision.
               </li>
               <li>
                 <strong>Async queue + webhooks</strong> — needed for sequencer volume, not for the
@@ -287,12 +281,53 @@ export default async function Home() {
         </div>
       </section>
 
+      {/* -------------------------------------------------------- next steps */}
+      <section className="ov-section">
+        <h2>Next steps</h2>
+        <p className="ov-sub">
+          Roughly in order of value. The first two are inputs, not engineering.
+        </p>
+        <ol className="ov-next">
+          <li>
+            <strong>Tune the voice.</strong> 10-20 real sent emails, or the{" "}
+            <code>jacob voice</code> skill. Right now the profile is inferred from LinkedIn posts,
+            which is a different register, so the copy reads competent-generic rather than like a
+            person. Everything else is polish next to this.
+          </li>
+          <li>
+            <strong>Name the referenceable customers.</strong> Investor overlap is the strongest
+            angle available and the one no competitor can produce, and it is switched off by
+            default because naming a customer in outbound is a business decision, not a technical
+            one. One list turns it on.
+          </li>
+          <li>
+            <strong>Decide lead-investor handling.</strong> Quote the sentence Fundable already
+            writes, or extract the fund names and accept the risk of naming the wrong lead.
+          </li>
+          <li>
+            <strong>Wire it to n8n.</strong> Roughly an afternoon. Deal alert fires, this returns
+            copy, a Gmail <em>draft</em> appears for review. That is the step where this stops
+            being a demo. Nothing sends automatically, by design.
+          </li>
+          <li>
+            <strong>Measure reply rate by angle.</strong> Every message logs which angle it used
+            and how confident it was, so once volume exists the question &ldquo;does investor
+            overlap actually beat a generic opener&rdquo; answers itself.
+          </li>
+          <li>
+            <strong>Then decide whether it is a product.</strong> That measurement is the argument
+            for making it customer-facing, and it is worth far more than any feature added before
+            it exists.
+          </li>
+        </ol>
+      </section>
+
       <footer className="ov-footer">
         <span>
           Voice profile <code>{voice.id}</code> · provenance{" "}
           <code>{voice.provenance}</code>
         </span>
-        <Link href="/demo">Open the demo →</Link>
+        <Link href="/guide">How to use it →</Link>
       </footer>
     </main>
   );
