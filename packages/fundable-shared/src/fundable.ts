@@ -41,6 +41,7 @@
  */
 
 import { INDUSTRY_ALIASES, LOCATION_ALIASES, ROUND_EXPANSIONS, ROUND_PHRASES } from "./aliases.js";
+import { DeadlineError, fetchWithDeadline, LEG_TIMEOUT_MS, retryOnce } from "./deadline.js";
 import { optionalEnv, requireEnv } from "./env.js";
 
 const DEFAULT_BASE_URL = "https://www.tryfundable.ai/api/v1";
@@ -74,10 +75,10 @@ type Envelope<T> = {
 };
 
 /** Accumulates spend across a pipeline run so the response can report `usage`. */
-export type Ledger = { credits: number; calls: number };
+export type Ledger = { credits: number; calls: number; deadlineAt?: number };
 
-export function newLedger(): Ledger {
-  return { credits: 0, calls: 0 };
+export function newLedger(deadlineAt?: number): Ledger {
+  return deadlineAt === undefined ? { credits: 0, calls: 0 } : { credits: 0, calls: 0, deadlineAt };
 }
 
 export class FundableError extends Error {
@@ -101,12 +102,23 @@ export async function call<T>(
   ledger?: Ledger
 ): Promise<CallResult<T>> {
   const key = requireEnv("FUNDABLE_API_KEY");
-  const res = await fetch(`${baseUrl()}${path}`, {
-    method: body ? "POST" : "GET",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined,
-    cache: "no-store",
-  });
+  const res = await retryOnce(
+    () =>
+      fetchWithDeadline(
+        `${baseUrl()}${path}`,
+        {
+          method: body ? "POST" : "GET",
+          headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+          body: body ? JSON.stringify(body) : undefined,
+          cache: "no-store",
+        },
+        { leg: `fundable${path}`, cap: LEG_TIMEOUT_MS.fundable, budget: ledger }
+      ),
+    // A dropped socket is worth one more try; a deadline is not — the budget
+    // that produced it will not have grown.
+    (err) => !(err instanceof DeadlineError) && err instanceof TypeError,
+    ledger
+  );
 
   let json: Envelope<T>;
   try {
@@ -197,6 +209,28 @@ function buildBatch<T>(
  * other subdomains are reported rather than silently mangled: guessing the
  * registrable domain without a public-suffix list breaks `foo.co.uk`.
  */
+/**
+ * Canonical form of an address, for identity and cache keys.
+ *
+ * Plus-addressing is the common case: `reed+fundable@acme.com` and
+ * `reed@acme.com` are one person, and treating them as two splits the cache and
+ * can hand the same human two different labels — which the spec's first
+ * acceptance criterion forbids.
+ *
+ * Deliberately NOT doing Gmail's dot-folding: it is provider-specific, and
+ * silently merging `a.b@` with `ab@` on a domain that treats them as separate
+ * mailboxes would be worse than the split it fixes.
+ */
+export function normalizeEmail(input: string): string {
+  const raw = input.trim().toLowerCase();
+  const at = raw.lastIndexOf("@");
+  if (at <= 0) return raw;
+  const local = raw.slice(0, at);
+  const domain = raw.slice(at + 1);
+  const plus = local.indexOf("+");
+  return `${plus > 0 ? local.slice(0, plus) : local}@${domain}`;
+}
+
 export function normalizeDomain(input: string): { domain: string; warning?: string } {
   let d = input.trim().toLowerCase();
 

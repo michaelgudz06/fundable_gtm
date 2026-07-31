@@ -195,6 +195,17 @@ Rules: VCs, angels, investors, VC newsletter operators = "Not Core ICP". Large/e
  * means; the customer base is still reported, so the gated ICPs keep the
  * evidence they require.
  */
+/**
+ * Bumped whenever either research question changes.
+ *
+ * The wording is load-bearing, not cosmetic: this query used to lead with "does
+ * it primarily sell to startups?", which rejected a Vice Chairman at CBRE from
+ * an ICP whose evidence gate is `none`. Rewording it moved CRE recall from 1/15
+ * to 8/15. A cache keyed without this would keep serving verdicts reached under
+ * the old question.
+ */
+export const RESEARCH_QUERY_VERSION = "2";
+
 export function companyResearchQuery(domain: string): string {
   return `What is the company at domain ${domain}? Describe its industry and what it does, what it sells and to whom (its typical customers), and its approximate size in employees.`;
 }

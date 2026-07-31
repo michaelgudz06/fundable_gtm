@@ -23,6 +23,7 @@
  * floor — and confidence is reduced when the employer cannot be confirmed.
  */
 
+import { fetchWithDeadline, LEG_TIMEOUT_MS } from "./deadline.js";
 import { optionalEnv, requireEnv } from "./env.js";
 
 const EXA_SEARCH_URL = "https://api.exa.ai/search";
@@ -66,19 +67,23 @@ type RawResponse = {
 };
 
 /** Accumulates Exa spend across a pipeline run, mirroring Fundable's Ledger. */
-export type ExaLedger = { usd: number; calls: number };
+export type ExaLedger = { usd: number; calls: number; deadlineAt?: number };
 
-export function newExaLedger(): ExaLedger {
-  return { usd: 0, calls: 0 };
+export function newExaLedger(deadlineAt?: number): ExaLedger {
+  return deadlineAt === undefined ? { usd: 0, calls: 0 } : { usd: 0, calls: 0, deadlineAt };
 }
 
 async function search(body: Record<string, unknown>, ledger?: ExaLedger): Promise<RawResponse> {
-  const res = await fetch(EXA_SEARCH_URL, {
-    method: "POST",
-    headers: { "x-api-key": requireEnv("EXA_API_KEY"), "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    cache: "no-store",
-  });
+  const res = await fetchWithDeadline(
+    EXA_SEARCH_URL,
+    {
+      method: "POST",
+      headers: { "x-api-key": requireEnv("EXA_API_KEY"), "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    },
+    { leg: "exa/search", cap: LEG_TIMEOUT_MS.exa, budget: ledger }
+  );
 
   const json = (await res.json().catch(() => ({}))) as RawResponse;
 
@@ -304,12 +309,16 @@ export async function answer(
   query: string,
   ledger?: ExaLedger
 ): Promise<{ text: string; citations: { url: string; title?: string }[] }> {
-  const res = await fetch(EXA_ANSWER_URL, {
-    method: "POST",
-    headers: { "x-api-key": requireEnv("EXA_API_KEY"), "Content-Type": "application/json" },
-    body: JSON.stringify({ query }),
-    cache: "no-store",
-  });
+  const res = await fetchWithDeadline(
+    EXA_ANSWER_URL,
+    {
+      method: "POST",
+      headers: { "x-api-key": requireEnv("EXA_API_KEY"), "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+      cache: "no-store",
+    },
+    { leg: "exa/answer", cap: LEG_TIMEOUT_MS.exa, budget: ledger }
+  );
 
   const json = (await res.json().catch(() => ({}))) as {
     answer?: string;

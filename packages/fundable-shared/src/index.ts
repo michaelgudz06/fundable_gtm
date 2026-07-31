@@ -7,6 +7,16 @@
  */
 
 export { loadRootEnv, optionalEnv, requireEnv } from "./env.js";
+export {
+  DeadlineError,
+  LEG_TIMEOUT_MS,
+  REQUEST_BUDGET_MS,
+  fetchWithDeadline,
+  legTimeoutMs,
+  retryOnce,
+  startBudget,
+} from "./deadline.js";
+export type { Budgeted } from "./deadline.js";
 
 // Curated alias tables. Fundable's search endpoints are literal name lookups
 // with no relevance ranking, and a bad permalink is silently dropped, so these
@@ -32,6 +42,7 @@ export {
   money,
   newLedger,
   normalizeDomain,
+  normalizeEmail,
   normalizeLinkedIn,
   peopleByLinkedIn,
   personByLinkedIn,
@@ -80,6 +91,7 @@ export {
   companyResearchQuery,
   companyResearchQueryByName,
   isFreemail,
+  RESEARCH_QUERY_VERSION,
 } from "./icp.js";
 export type { ClassifyInput, Icp, IcpPath, IcpResult } from "./icp.js";
 

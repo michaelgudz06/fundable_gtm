@@ -389,6 +389,30 @@ describe("caller values entering the prompt", () => {
   });
 });
 
+describe("evidence gates (Phase A)", () => {
+  test("every gate value in the registry is one the post-check understands", () => {
+    // The post-check keys off exactly these three values. A new gate name added
+    // to the JSON without teaching the code would silently stop being enforced.
+    const known = new Set(["none", "startup_customers_required", "startup_focus"]);
+    for (const e of icpEntries()) {
+      assert.ok(known.has(e.evidence_gate), `#${e.number} has unknown gate "${e.evidence_gate}"`);
+    }
+  });
+
+  test("the ICPs the spec names as gated are still gated", () => {
+    // Cross-cutting rule: evidence is REQUIRED for #4, #5 and #10-#16.
+    for (const n of [4, 5, 10, 11, 12, 13, 14, 15, 16]) {
+      assert.equal(icpByNumber(n)?.evidence_gate, "startup_customers_required", `#${n}`);
+    }
+    // #17 and #18 carry an independent startup-focus gate.
+    for (const n of [17, 18]) {
+      assert.equal(icpByNumber(n)?.evidence_gate, "startup_focus", `#${n}`);
+    }
+    // #2 and #19 are deliberately ungated — a CRE firm need not sell to startups.
+    for (const n of [2, 19]) assert.equal(icpByNumber(n)?.evidence_gate, "none", `#${n}`);
+  });
+});
+
 describe("registry gates that must hold at build time", () => {
   test("templates may only reference approved claims (fail-closed already ran at import)", () => {
     // If a template referenced a pending_review claim, the registry module

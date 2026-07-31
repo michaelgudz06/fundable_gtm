@@ -10,15 +10,20 @@ import assert from "node:assert/strict";
 import { test, describe } from "node:test";
 
 import {
-  checkLength,
+  LEG_TIMEOUT_MS,
+  REQUEST_BUDGET_MS,
   blockingIssues,
+  checkLength,
   dealDate,
   firstNameOf,
+  legTimeoutMs,
   loadVoice,
   money,
   normalizeDomain,
+  normalizeEmail,
   normalizeLinkedIn,
   provenanceWarning,
+  retryOnce,
   roundLabel,
   stripEmDashes,
   verifyCopy,
@@ -515,5 +520,83 @@ describe("verifyCopy", () => {
     const issues = verifyCopy({ copy, evidence, allowedNames });
     assert.ok(issues.some((i) => i.kind === "entity" && /Sequoia/.test(i.quote)), JSON.stringify(issues));
     assert.ok(!blockingIssues(issues).some((i) => i.kind === "entity"));
+  });
+});
+
+describe("request deadlines (Phase A)", () => {
+  test("a leg is clamped to whatever remains of the request budget", () => {
+    const budget = { deadlineAt: Date.now() + 2_000 };
+    // The leg would take 10s on its own; only 2s of the request budget is left.
+    assert.ok(legTimeoutMs(10_000, budget) <= 2_000);
+    assert.ok(legTimeoutMs(10_000, budget) > 1_000);
+    // With no budget the leg gets its own cap.
+    assert.equal(legTimeoutMs(10_000, undefined), 10_000);
+  });
+
+  test("an exhausted budget still yields a real timeout, never zero", () => {
+    // Zero would abort the fetch before it started and report no useful reason.
+    assert.ok(legTimeoutMs(10_000, { deadlineAt: Date.now() - 5_000 }) >= 250);
+  });
+
+  test("the whole-request budget sits under the 15s acceptance bar", () => {
+    assert.ok(REQUEST_BUDGET_MS < 15_000, "budget must leave room to compose and serialise");
+    for (const cap of Object.values(LEG_TIMEOUT_MS)) assert.ok(cap <= REQUEST_BUDGET_MS);
+  });
+
+  test("retryOnce repeats a transient failure exactly once, and never a permanent one", async () => {
+    let calls = 0;
+    const flaky = async () => {
+      calls++;
+      if (calls === 1) throw new TypeError("fetch failed");
+      return "ok";
+    };
+    assert.equal(await retryOnce(flaky, (e) => e instanceof TypeError), "ok");
+    assert.equal(calls, 2);
+
+    let permanent = 0;
+    await assert.rejects(
+      retryOnce(
+        async () => {
+          permanent++;
+          throw new Error("422");
+        },
+        (e) => e instanceof TypeError
+      )
+    );
+    assert.equal(permanent, 1, "a permanent failure must not be retried");
+  });
+
+  test("a spent budget suppresses the retry", async () => {
+    let calls = 0;
+    await assert.rejects(
+      retryOnce(
+        async () => {
+          calls++;
+          throw new TypeError("fetch failed");
+        },
+        () => true,
+        { deadlineAt: Date.now() - 1 }
+      )
+    );
+    assert.equal(calls, 1, "no budget left means no second attempt");
+  });
+});
+
+describe("email identity (Phase A)", () => {
+  test("plus-addressing folds to one identity", () => {
+    // Two spellings of one human. Splitting them splits the cache, and the same
+    // person can then receive two different labels.
+    assert.equal(normalizeEmail("reed+fundable@acme.com"), "reed@acme.com");
+    assert.equal(normalizeEmail("  Reed@Acme.com "), "reed@acme.com");
+    assert.equal(normalizeEmail("reed@acme.com"), "reed@acme.com");
+  });
+
+  test("dots are left alone — folding them is provider-specific and would merge real mailboxes", () => {
+    assert.equal(normalizeEmail("a.b@acme.com"), "a.b@acme.com");
+  });
+
+  test("malformed input is returned lowercased rather than mangled", () => {
+    assert.equal(normalizeEmail("not-an-email"), "not-an-email");
+    assert.equal(normalizeEmail("@acme.com"), "@acme.com");
   });
 });
