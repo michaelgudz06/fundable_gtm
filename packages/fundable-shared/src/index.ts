@@ -82,18 +82,12 @@ export type { ExaArticle, ExaLedger, ExaPerson, WorkHistoryEntry } from "./exa.j
 // ICP classification — two-tier, ported from fundable-scripts.
 export {
   ClassificationError,
-  EMAIL_ONLY_PROMPT,
   FREEMAIL,
-  ICPS,
-  ICP_HUBSPOT_LABEL,
-  TITLED_PROMPT,
-  classifyIcp,
   companyResearchQuery,
   companyResearchQueryByName,
   isFreemail,
   RESEARCH_QUERY_VERSION,
 } from "./icp.js";
-export type { ClassifyInput, Icp, IcpPath, IcpResult } from "./icp.js";
 
 // OpenRouter.
 export { EMPTY_USAGE, MODEL_PLAN, MODEL_WRITE, complete, parseJson, stream } from "./openrouter.js";

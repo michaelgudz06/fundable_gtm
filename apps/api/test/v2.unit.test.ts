@@ -19,6 +19,7 @@ import {
   useCasesFor,
 } from "../src/lib/v2/registry";
 import { asCompanyName, asFactValue, buildClassifierPrompt, researchTarget } from "../src/lib/v2/classify";
+import { PENDING_HUBSPOT_OPTIONS, hubspotLabelFor } from "../src/lib/v2/hubspot";
 import {
   articleFor,
   composeFromTemplate,
@@ -436,6 +437,40 @@ describe("caller values entering the prompt", () => {
     assert.ok(!asFactValue("A\u0000B\u2028C").match(/[\u0000\u2028]/));
     assert.equal(asFactValue("x".repeat(500)).length, 200);
     assert.equal(asFactValue("  Padded  Name  "), "Padded Name");
+  });
+});
+
+describe("HubSpot picklist mapping (Phase C)", () => {
+  test("the mapping is explicit, because the two numbering schemes diverge", () => {
+    // The registry has no #3; the HubSpot property is a plain sequential list.
+    // Everything from Startup Banking onward is therefore off by one, and
+    // assuming they matched would write the wrong segment onto real contacts.
+    assert.equal(hubspotLabelFor(2).value, "2 - CRE Broker");
+    assert.equal(hubspotLabelFor(4).value, "3 - Startup Banking");
+    assert.equal(hubspotLabelFor(6).value, "5 - Founder");
+    assert.equal(hubspotLabelFor(18).value, "17 - Startup Marketing & PR Agency");
+    assert.equal(hubspotLabelFor(null).value, "Not Core ICP");
+  });
+
+  test("a label with no property option refuses rather than guessing", () => {
+    // Falling back to "Not Core ICP" for an investor would re-apply the exact
+    // v1 rule that #19 reverses — silently, onto a real contact record.
+    for (const n of [19, 20]) {
+      const l = hubspotLabelFor(n);
+      assert.equal(l.status, "missing_property_option", `#${n}`);
+      assert.equal(l.value, null, `#${n} must not invent an option`);
+      assert.ok(l.status === "missing_property_option" && l.proposed, `#${n} should propose one`);
+    }
+  });
+
+  test("every registry label is either mapped or explicitly pending", () => {
+    // The module throws at import if this is violated, so reaching this
+    // assertion at all is most of the proof; this pins the intent.
+    for (const e of icpEntries()) {
+      const l = hubspotLabelFor(e.number);
+      assert.ok(l.value !== undefined, `#${e.number}`);
+    }
+    assert.deepEqual(Object.keys(PENDING_HUBSPOT_OPTIONS).sort(), ["19", "20"]);
   });
 });
 
