@@ -14,6 +14,7 @@ import {
   newExaLedger,
   newLedger,
   normalizeDomain,
+  normalizeLinkedIn,
   personByLinkedIn,
   verifyCopy,
   blockingIssues,
@@ -21,7 +22,12 @@ import {
 
 import { checkAuth, checkRateLimit } from "../../../../lib/auth";
 import { getStorage } from "../../../../lib/storage";
-import { classifyV2, CLASSIFIER_PROMPT_VERSION } from "../../../../lib/v2/classify";
+import {
+  classifyV2,
+  researchTarget,
+  startResearch,
+  CLASSIFIER_PROMPT_VERSION,
+} from "../../../../lib/v2/classify";
 import { composeFromTemplate, composeNotCore, validateEmailBody, type ComposeContext } from "../../../../lib/v2/compose";
 import {
   MESSAGE_TYPES,
@@ -71,13 +77,34 @@ type RequestBody = {
   additional_context?: Record<string, unknown>;
 };
 
-/**
- * Wall-clock time a caller sees is handler time + platform time (cold boot,
- * queueing, network). Only the first is ours to fix, and on the first run of a
- * real 29-lead list the two differed by more than a minute — so the split is
- * reported on every response instead of being guessed at from the outside.
- */
+/** Per-leg upstream timings, reported on every response as X-Stage-Ms. */
 type Trace = { identity: number; research: number; model: number };
+
+/** Fundable's own TTL for person records elsewhere in this codebase. */
+const PERSON_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Identity lookups are cached because the upstream endpoint is slow on a cold
+ * path (19s measured, against 2.6s warm) and a lead list re-run — a retry, a
+ * second campaign, an n8n replay — asks the same question about the same people.
+ *
+ * A miss is cached too: "this LinkedIn URL is not in Fundable" is a stable
+ * answer, and without it every unknown lead pays the slow path on every send.
+ */
+async function personCached(
+  linkedin: string,
+  ledger: ReturnType<typeof newLedger>
+): Promise<{ person: Awaited<ReturnType<typeof personByLinkedIn>>["person"] }> {
+  const storage = getStorage();
+  const key = `person:${normalizeLinkedIn(linkedin) ?? linkedin.trim().toLowerCase()}`;
+  const hit = (await storage.cacheGet(key, "fundable")) as { person: unknown } | null;
+  if (hit && typeof hit === "object" && "person" in hit) {
+    return { person: hit.person as never };
+  }
+  const { person } = await personByLinkedIn(linkedin, ledger);
+  await storage.cacheSet(key, "fundable", { person: person ?? null }, PERSON_TTL_MS);
+  return { person };
+}
 
 export async function POST(req: Request): Promise<Response> {
   const started = Date.now();
@@ -163,10 +190,23 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
     let title = typeof kf.title === "string" ? kf.title.trim() : undefined;
     let company = typeof kf.company_name === "string" ? kf.company_name.trim() : undefined;
     const emailDomain = normalizeDomain(email).domain;
+    const companyDomain =
+      typeof kf.company_domain === "string" && kf.company_domain.trim()
+        ? normalizeDomain(kf.company_domain).domain
+        : undefined;
+
+    // Research asks about the company; the identity lookup asks about the
+    // person. Neither needs the other's answer when the caller already told us
+    // the title — and the identity leg is the slow one (measured at 19s cold,
+    // 2.6s warm against Fundable /people), so the two are started together.
+    const preTarget = title
+      ? researchTarget({ emailDomain, companyDomain, company })
+      : null; // no title yet: the freemail gate may make research unnecessary
+    const researchTask = preTarget ? startResearch(preTarget, exa) : undefined;
 
     if (linkedin) {
       const tIdentity = Date.now();
-      const { person } = await personByLinkedIn(linkedin, fundable);
+      const { person } = await personCached(linkedin, fundable);
       trace.identity = Date.now() - tIdentity;
       if (person) {
         title = title ?? person.title ?? undefined;
@@ -186,15 +226,11 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
     }
 
     // ---- classification -----------------------------------------------------
-    // company_domain is the caller's assertion about the employer. It never
-    // overrides a corporate email domain and never participates in the identity
-    // check above; it exists so a lead with a personal address is still
+    // company_domain (read above) is the caller's assertion about the employer.
+    // It never overrides a corporate email domain and never participates in the
+    // identity check; it exists so a lead with a personal address is still
     // researchable instead of failing closed for want of a lookup.
-    const companyDomain =
-      typeof kf.company_domain === "string" && kf.company_domain.trim()
-        ? normalizeDomain(kf.company_domain).domain
-        : undefined;
-    const cls = await classifyV2({ email, title, company, companyDomain }, exa);
+    const cls = await classifyV2({ email, title, company, companyDomain, researchTask }, exa);
     trace.research = cls.timings.research;
     trace.model = cls.timings.model;
     const entry = cls.icpNumber !== null ? icpByNumber(cls.icpNumber) : null;
