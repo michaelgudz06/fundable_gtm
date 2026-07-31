@@ -6,26 +6,42 @@
  * ICP everywhere, instead of each surface reimplementing the prompt and
  * drifting.
  *
+ * This endpoint used to be the drift. It ran the legacy 17-label taxonomy whose
+ * rule 3 reads "VCs, angels, and investors are not a target", while
+ * /api/v1/personalize runs the v2 registry where #19 Investor is core — so the
+ * same a16z GP came back `ICP #19: Investor` from one surface and
+ * `Not Core ICP` from the other. That is the spec's first acceptance criterion
+ * failing inside a single deployment, and the spec's own References call it the
+ * unresolved "#19 conflict".
+ *
+ * It now classifies with classifyV2 against the same registry as the
+ * personalize route. What it keeps that the other does not expose: the model's
+ * reasoning, which path was taken, and the HubSpot picklist value.
+ *
  * Two-tier, chosen automatically by what is known:
- *   title present  -> titled path (precise; role-gated taxonomy)
- *   email only     -> Exa company research + conservative email-only prompt
+ *   title present  -> titled path (precise; role-gated registry)
+ *   email only     -> Exa company research + conservative classification
  *   freemail/blank -> refuses rather than guessing
  *
- * When only email + LinkedIn are known (the stated constraint), pass the
- * LinkedIn URL: the title is resolved from Fundable's people index first, which
- * upgrades the lead onto the titled path.
+ * When only email + LinkedIn are known, pass the LinkedIn URL: the title is
+ * resolved from Fundable's people index first, which upgrades the lead onto the
+ * precise path.
  */
 
 import {
   ClassificationError,
-  classifyIcp,
+  FundableError,
   newExaLedger,
   newLedger,
+  normalizeEmail,
   personByLinkedIn,
-  FundableError,
+  startBudget,
 } from "@fundable/shared";
 
 import { checkAuth, checkRateLimit } from "../../../lib/auth";
+import { classifyV2, CLASSIFIER_PROMPT_VERSION } from "../../../lib/v2/classify";
+import { hubspotLabelFor } from "../../../lib/v2/hubspot";
+import { REGISTRY_VERSIONS } from "../../../lib/v2/registry";
 
 export const runtime = "nodejs";
 
@@ -64,7 +80,7 @@ export async function POST(req: Request): Promise<Response> {
     return error(400, "INVALID_JSON", "Request body is not valid JSON.");
   }
 
-  const email = typeof body.email === "string" ? body.email.trim() : undefined;
+  const email = typeof body.email === "string" ? normalizeEmail(body.email) : undefined;
   const linkedin = typeof body.linkedin === "string" ? body.linkedin.trim() : undefined;
   let title = typeof body.title === "string" ? body.title.trim() : undefined;
   let company = typeof body.company === "string" ? body.company.trim() : undefined;
@@ -72,10 +88,16 @@ export async function POST(req: Request): Promise<Response> {
   if (!email && !linkedin && !title) {
     return error(400, "INVALID_REQUEST", "Need at least one of: email, linkedin, title.");
   }
+  if (!email) {
+    // classifyV2 keys its gates off the address; without one there is nothing to
+    // fail closed against.
+    return error(400, "INVALID_REQUEST", "`email` is required to classify.");
+  }
 
   const started = Date.now();
-  const fundable = newLedger();
-  const exa = newExaLedger();
+  const deadlineAt = startBudget();
+  const fundable = newLedger(deadlineAt);
+  const exa = newExaLedger(deadlineAt);
   const warnings: string[] = [];
 
   // LinkedIn -> title upgrade. This is what makes "email + linkedin only" land
@@ -104,7 +126,7 @@ export async function POST(req: Request): Promise<Response> {
 
   let result;
   try {
-    result = await classifyIcp({ email, title, company }, exa);
+    result = await classifyV2({ email, title, company, deadlineAt }, exa);
   } catch (err) {
     // Infrastructure failure is a 502 the caller can retry — never a 200 with
     // a confident "Not Core ICP" they would persist (QA finding).
@@ -114,19 +136,34 @@ export async function POST(req: Request): Promise<Response> {
     throw err;
   }
 
-  return Response.json({
-    icp: result.icp,
-    hubspot_label: result.hubspot_label,
-    reasoning: result.reasoning,
-    path: result.path,
-    inputs: result.inputs,
-    model: result.model,
-    warnings: [...warnings, ...result.warnings],
-    usage: {
-      fundable_credits: fundable.credits,
-      exa_cost_usd: Number(exa.usd.toFixed(6)),
-      llm_tokens: result.usage?.totalTokens ?? 0,
-      ms: Date.now() - started,
+  const hubspot = hubspotLabelFor(result.icpNumber);
+  if (hubspot.status === "missing_property_option") warnings.push(hubspot.note);
+
+  return Response.json(
+    {
+      icp: result.label,
+      icp_number: result.icpNumber,
+      hubspot_label: hubspot.value,
+      hubspot_label_status: hubspot.status,
+      ...(hubspot.status === "missing_property_option" ? { hubspot_label_proposed: hubspot.proposed } : {}),
+      reasoning: result.reasoning,
+      path: result.path,
+      agreement: result.agreement.total ? `${result.agreement.top}/${result.agreement.total}` : null,
+      inputs: { email, ...(title ? { title } : {}), ...(company ? { company } : {}) },
+      model: result.model,
+      warnings: [...warnings, ...result.warnings],
+      usage: {
+        fundable_credits: fundable.credits,
+        exa_cost_usd: Number(exa.usd.toFixed(6)),
+        llm_tokens: result.usage.reduce((n, u) => n + (u.totalTokens ?? 0), 0),
+        ms: Date.now() - started,
+      },
     },
-  });
+    {
+      headers: {
+        "X-Icp-Registry-Version": REGISTRY_VERSIONS.icp_registry,
+        "X-Prompt-Version": CLASSIFIER_PROMPT_VERSION,
+      },
+    }
+  );
 }
