@@ -2,17 +2,19 @@
   "name": "personalize-api",
   "version": "0.1.0",
   "private": true,
-  "description": "Fundable Personalization API — person + trigger in, voice-matched copy + evidence out.",
+  "description": "Fundable Personalization API \u2014 person + trigger in, voice-matched copy + evidence out.",
   "workspaces": [
     "packages/*",
     "apps/*"
   ],
   "scripts": {
-    "typecheck": "tsc --build --force",
+    "typecheck": "tsc --build --force && npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "smoke": "npm run smoke --workspace @fundable/shared",
     "verify:supabase": "tsx scripts/verify-supabase.ts",
-    "dev": "npm run dev --workspace @fundable/api"
+    "dev": "npm run dev --workspace @fundable/api",
+    "build": "npm run build --workspace @fundable/api",
+    "verify": "npm run typecheck && npm test && npm run build"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

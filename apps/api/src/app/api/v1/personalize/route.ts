@@ -46,6 +46,7 @@ import {
   getTemplate,
   icpByNumber,
   useCasesFor,
+  isDeferred,
   approvedClaimTexts,
   type MessageType,
 } from "../../../../lib/v2/registry";
@@ -106,7 +107,9 @@ type Trace = {
   /** Vote agreement, e.g. "3/3" — surfaced so a caller can gate review on it. */
   agreement: string;
   /** The model the provider actually served, not the one we asked for. */
-  model: string;
+  modelServed: string;
+  /** alert | mcp | none — which frame the body was composed from. */
+  useCaseType: string;
 };
 
 /**
@@ -190,7 +193,7 @@ async function personCached(
 
 export async function POST(req: Request): Promise<Response> {
   const started = Date.now();
-  const trace: Trace = { identity: 0, research: 0, model: 0, bodySource: "none", classification: "none", agreement: "", model: "" };
+  const trace: Trace = { identity: 0, research: 0, model: 0, bodySource: "none", classification: "none", agreement: "", modelServed: "", useCaseType: "none" };
   const res = await handle(req, trace);
   res.headers.set("X-Handler-Ms", String(Date.now() - started));
   res.headers.set(
@@ -202,7 +205,8 @@ export async function POST(req: Request): Promise<Response> {
   // which is exactly how someone ends up believing their copy went out.
   res.headers.set("X-Body-Source", trace.bodySource);
   res.headers.set("X-Classification", trace.classification);
-  if (trace.model) res.headers.set("X-Model-Served", trace.model);
+  if (trace.modelServed) res.headers.set("X-Model-Served", trace.modelServed);
+  res.headers.set("X-Use-Case-Type", trace.useCaseType);
   if (trace.agreement) res.headers.set("X-Classifier-Agreement", trace.agreement);
   return res;
 }
@@ -360,6 +364,7 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
         warnings: [],
         timings: { research: 0, model: 0 },
         agreement: { top: cachedCls.agreementTop ?? 0, total: cachedCls.agreementTotal ?? 0 },
+        model: "",
       };
       trace.classification = "cached";
     } else {
@@ -380,9 +385,24 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
     trace.research = cls.timings.research;
     trace.model = cls.timings.model;
     if (cls.agreement.total) trace.agreement = `${cls.agreement.top}/${cls.agreement.total}`;
-    if (cls.model) trace.model = cls.model;
+    if (cls.model) trace.modelServed = cls.model;
     const entry = cls.icpNumber !== null ? icpByNumber(cls.icpNumber) : null;
-    const useCases = useCasesFor(cls.icpNumber);
+    // CTX-001: typed context only. These three are the conditions the catalog's
+    // requires_context refers to; anything else in additional_context is ignored.
+    const useCases = useCasesFor(cls.icpNumber, {
+      investor_connection: ctxIn.investor_connection === true,
+      product_context: typeof ctxIn.product_context === "string" ? ctxIn.product_context.trim() : undefined,
+      target_buyer_role: typeof ctxIn.target_buyer_role === "string" ? ctxIn.target_buyer_role.trim() : undefined,
+      territory: typeof ctxIn.territory === "string" ? ctxIn.territory.trim() : undefined,
+    });
+
+    trace.useCaseType = useCases[0]?.workflow_type ?? "none";
+    if (isDeferred(cls.icpNumber)) {
+      // USE-006: classified, but the spec defers use-case selection for this ICP
+      // until product and delivery context are known. The lead still gets copy —
+      // it just makes no use-case claim.
+      trace.useCaseType = "deferred";
+    }
 
     // ---- compose (GEN-001..009, CTX-001..004) -------------------------------
     // Context is typed and allowlisted (CTX-001): unknown keys are ignored, and
@@ -432,7 +452,13 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
       // Claim policy: everything factual must trace to the use case, approved
       // claims, or the caller's own template text (their claims are theirs).
       const evidence = [
-        ...useCases.map((u) => ({ fact: `${u.name}. ${u.why_relevant} Example: ${u.example_alert}`, source: "sender_context" as const, confidence: 1 })),
+        ...useCases.map((u) => ({
+          fact: `${u.name}. ${u.why_relevant} Example: ${
+            u.workflow_type === "mcp" ? u.example_prompt : u.example_alert
+          }`,
+          source: "sender_context" as const,
+          confidence: 1,
+        })),
         ...approvedClaimTexts(["capability-deal-alerts", "capability-realtime-tracking", "capability-buyer-contacts", "capability-mcp", "capability-api"]).map(
           (t) => ({ fact: t, source: "sender_context" as const, confidence: 1 })
         ),

@@ -1,75 +1,534 @@
 {
-  "version": "2.1.0",
-  "//prose": "2.1.0: `name` is dropped into carrier sentences (\"One useful alert for X is ___\"), so it must be a NOUN PHRASE in the recipient's second person. Fixed here: an imperative (\"Claim newly funded accounts first\"), a UI label (\"API / data feed\"), and a third-person reference to the reader (\"the broker's market\").",
-  "//": "Use-case catalog per SPEC-v2 §3 (USE-001..004): selection returns ONLY entries from this file, primary first, max three, deterministic per ICP. example_alert strings must describe alerts Fundable can actually express — every one below is built from filters verified against the live API (industries, locations, stage/round, employee count, date windows, hiring-plan mentions in deal descriptions). 'Companies expanding into a new geo' has NO structured signal; where the spec's table implies it, the example uses the honest proxy (funded + territory/new-market phrasing from deal text).",
-  "use_cases": {
-    "1": [
-      { "id": "funded-hiring-signals", "name": "Funded companies signaling hiring", "why_relevant": "A fresh raise plus stated hiring plans means they need talent before they have recruiters.", "example_alert": "US startups that raised seed-Series B in the last 7 days and mention growing the team." },
-      { "id": "sector-stage-raises", "name": "Raises filtered to your sector and stage", "why_relevant": "Reach them before other talent shops do.", "example_alert": "AI startups that raised in the last 24 hours, 11-100 employees." }
-    ],
-    "2": [
-      { "id": "funded-companies-in-market", "name": "Recently funded companies in your market", "why_relevant": "A recent raise can precede office expansion.", "example_alert": "Bay Area startups that raised in the past 24 hours." },
-      { "id": "territory-stage-watch", "name": "Territory watch by stage", "why_relevant": "Series B+ raises are the strongest space-demand signal.", "example_alert": "NY companies that raised Series B or later this week." }
-    ],
-    "4": [
-      { "id": "newly-funded-startups", "name": "Newly funded startups, daily", "why_relevant": "Deposits move right after a round closes.", "example_alert": "A daily digest of every startup that raised in your segment." },
-      { "id": "territory-alerts", "name": "Territory alerts with founder contacts", "why_relevant": "First call after the wire lands wins the account.", "example_alert": "SF fintech raises this week, with founder contact info." }
-    ],
-    "5": [
-      { "id": "claim-funded-accounts", "name": "First claim on newly funded accounts", "why_relevant": "Post-raise companies get budget; first rep to claim owns the account.", "example_alert": "Companies in your ICP that raised in the last hour." },
-      { "id": "stealth-emergence", "name": "Stealth and first-raise emergence", "why_relevant": "Accounts nobody has claimed yet.", "example_alert": "Companies emerging from stealth with their first announced round." }
-    ],
-    "6": [
-      { "id": "relevant-active-investors", "name": "Investors active in your space", "why_relevant": "See who is actually writing cheques at your stage before you raise.", "example_alert": "Funds that led seed rounds in your sector in the last 90 days." },
-      { "id": "deal-history-research", "name": "Deal history and round research", "why_relevant": "Know a fund's real activity before the first call.", "example_alert": "Every round a target fund participated in, with dates and co-investors." }
-    ],
-    "7": [
-      { "id": "investor-lists-per-client", "name": "Investor lists matched to each client", "why_relevant": "Ground every intro list in live deal activity rather than a stale database.", "example_alert": "Active seed investors in climate for a client raising now." }
-    ],
-    "8": [
-      { "id": "thesis-monitoring", "name": "Thesis monitoring", "why_relevant": "See every company crossing into your thesis the day it happens.", "example_alert": "B2B SaaS companies raising Series B+ at $20M+ rounds." },
-      { "id": "repeat-founder-signals", "name": "Repeat-founder signals", "why_relevant": "Second-time founders raise faster; be earliest.", "example_alert": "New rounds where the company's founders previously built a funded startup." }
-    ],
-    "9": [
-      { "id": "api-datafeed", "name": "API and data-feed access", "why_relevant": "Build on live funding, investor, and people data instead of scraping.", "example_alert": "REST access to rounds, investors, and people as they are tracked." },
-      { "id": "mcp-research", "name": "MCP inside Claude/ChatGPT", "why_relevant": "Query the dataset from the tools your team already uses.", "example_alert": "Fundable MCP connected to your assistant for company research." }
-    ],
-    "10": [
-      { "id": "new-geo-entry", "name": "Companies entering new geographies", "why_relevant": "Funded companies moving into a new market need cross-border payments and FX support.", "example_alert": "Funded startups whose round announcements mention international or new-market expansion." },
-      { "id": "funded-international", "name": "Funded international startups", "why_relevant": "A raise outside your home market is a cross-border moment by definition.", "example_alert": "European startups raising US rounds this month." }
-    ],
-    "11": [
-      { "id": "hiring-headcount-signals", "name": "Hiring and headcount signals with HR buyers", "why_relevant": "Post-raise headcount growth is when payroll and PEO decisions get made.", "example_alert": "Raises this week that mention hiring plans, with People/HR contacts." },
-      { "id": "new-geo-hr", "name": "New-geography signals", "why_relevant": "A company hiring in a new country needs an employer of record fast.", "example_alert": "Funded startups whose announcements mention expanding the team internationally." }
-    ],
-    "12": [
-      { "id": "post-raise-insurance", "name": "Post-raise buying moments", "why_relevant": "D&O and cyber get bought right after the round closes.", "example_alert": "Series A+ raises this week with finance and operations contacts." }
-    ],
-    "13": [
-      { "id": "upmarket-readiness", "name": "Funded startups moving upmarket", "why_relevant": "Compliance gets bought when a funded startup starts selling to bigger customers.", "example_alert": "B2B startups that raised Series A/B in the last 30 days." }
-    ],
-    "14": [
-      { "id": "fresh-raise-hiring", "name": "Fresh raises with hiring plans", "why_relevant": "Reach them the week the hiring budget appears.", "example_alert": "Raises in the last 7 days mentioning team growth, with recruiting contacts." }
-    ],
-    "15": [
-      { "id": "post-raise-finance", "name": "Post-raise finance needs", "why_relevant": "New money means audits, bookkeeping, and a finance stack decision.", "example_alert": "Seed and Series A raises this week, with founder contacts." }
-    ],
-    "16": [
-      { "id": "funded-ready-to-spend", "name": "Newly funded companies ready to spend", "why_relevant": "Describe your ICP once; get pinged when a matching company raises and has budget.", "example_alert": "US companies Series B+ that raised in the last 24 hours." }
-    ],
-    "17": [
-      { "id": "post-raise-legal", "name": "Post-raise legal needs", "why_relevant": "Rounds create financing docs, new entities, and hiring paperwork.", "example_alert": "First-time raises this month, with founder contacts." }
-    ],
-    "18": [
-      { "id": "raise-launch-signals", "name": "Raise and launch signals with marketing contacts", "why_relevant": "Announcement week is when startups buy marketing and PR help.", "example_alert": "Seed-Series A raises this week in consumer, with marketing contacts." }
-    ],
-    "19": [
-      { "id": "thesis-deal-alerts", "name": "Thesis-based deal alerts", "why_relevant": "See every round in your thesis the day it is announced, not in next month's newsletter.", "example_alert": "Developer-tools rounds under $15M, weekly." },
-      { "id": "portfolio-monitoring", "name": "Portfolio and milestone monitoring", "why_relevant": "Know when a portfolio or watchlist company raises, before it is news.", "example_alert": "Any new round for the 40 companies on your watchlist." }
-    ],
-    "20": [
-      { "id": "exact-icp-funded-accounts", "name": "Funded accounts matching your exact ICP", "why_relevant": "Describe your ICP in natural language; get pinged when a matching company raises.", "example_alert": "Your ICP description, evaluated against every new round hourly." },
-      { "id": "enriched-buyers", "name": "Enriched buyer contacts", "why_relevant": "Rounds arrive with the people you would actually reach out to.", "example_alert": "New raises in your segment with verified buyer contact info." }
-    ]
+  "version": "3.0.0",
+  "//": "Workflow catalog per SPEC §3 (USE-001..006). REPLACES the v2 per-ICP catalog, which had 30 bespoke funding-anchored descriptions with no shared vocabulary. Use cases now come from a fixed set of SIX alert families plus eleven MCP workflows; an ICP's assignment is a POOL and the selector returns at most three, at most one per family. Filters (industry, stage, size, geography, territory, funding amount, recency, selected investors) configure a family and never create one.",
+  "//deferred": "ICP #9 is classified but selects NO use case until product and delivery context are known (USE-006).",
+  "//forbidden": "launch_market_entry and fundraising_window are NOT catalog entries and are rejected at build time.",
+  "alert_families": {
+    "funded_icp_match": {
+      "name": "recently funded companies matching your filters",
+      "definition": "Companies that have just raised, narrowed by sector, stage, size, current geography and any other ICP filter.",
+      "excludes": "Territory and stage are FILTERS on this family, never families of their own."
+    },
+    "geographic_expansion": {
+      "name": "companies entering a new geography",
+      "definition": "Evidence that a company is opening an office or entering a market it was not in before.",
+      "excludes": "Where a company already is does not qualify. Existing location is a filter on funded_icp_match."
+    },
+    "investor_portfolio": {
+      "name": "companies tied to investors you care about",
+      "definition": "Companies connected to a selected set of investors. Two distinct jobs: relationship_leverage uses a confirmed investor connection, peer_activity watches what other firms are doing.",
+      "excludes": "Never promise a warm introduction. Kept separate from funded_icp_match because the job is the relationship, not the round."
+    },
+    "hiring_growth": {
+      "name": "companies staffing up",
+      "definition": "Evidence of hiring, building out a function, or a material headcount increase.",
+      "excludes": "Hiring is the signal in its own right; it does not require a raise to qualify."
+    },
+    "growth_momentum": {
+      "name": "non-funding growth milestones",
+      "definition": "Revenue, customer, partnership or operating milestones that show a company is compounding.",
+      "excludes": "Funding is NOT momentum here — a raise belongs to funded_icp_match."
+    },
+    "enterprise_readiness": {
+      "name": "companies moving upmarket",
+      "definition": "Evidence of an enterprise, security or regulated-customer motion: SOC2, first enterprise logos, compliance hires.",
+      "excludes": "A large round alone is not readiness."
+    }
+  },
+  "mcp_workflows": {
+    "find_relevant_investors": {
+      "name": "find investors who actually back companies like yours",
+      "example_prompt": "Which seed funds led rounds in developer tools in the last 12 months?"
+    },
+    "research_investor_fit": {
+      "name": "check whether a fund is a real fit before you reach out",
+      "example_prompt": "Has Renegade Partners invested in vertical SaaS, and at what stage?"
+    },
+    "build_investor_outreach": {
+      "name": "draft outreach grounded in a fund's actual portfolio",
+      "example_prompt": "Draft an intro to a16z referencing their last three fintech investments."
+    },
+    "map_fundraising_market": {
+      "name": "map who is active in your market right now",
+      "example_prompt": "Who has funded seed-stage climate hardware in the past six months?"
+    },
+    "map_investment_thesis": {
+      "name": "turn your thesis into a live screen",
+      "example_prompt": "Show me B2B infrastructure companies raising Series B at $20M+ this quarter."
+    },
+    "research_company_founder": {
+      "name": "research a founder's track record before a first call",
+      "example_prompt": "What has this founder built before, and who funded it?"
+    },
+    "identify_momentum": {
+      "name": "spot which portfolio or watchlist companies are compounding",
+      "example_prompt": "Which companies on my watchlist announced customer or partnership milestones this month?"
+    },
+    "unify_sourcing_context": {
+      "name": "pull everything you know about a company into one view",
+      "example_prompt": "Give me the full picture on this company: rounds, investors, people, recent signals."
+    },
+    "prepare_founder_outreach": {
+      "name": "prepare a first-call brief on a founder",
+      "example_prompt": "Brief me before my call with this founder: company, funding, team, recent news."
+    },
+    "update_investment_crm": {
+      "name": "keep your CRM current without manual entry",
+      "example_prompt": "Update my pipeline with the latest round and investor data for these ten companies."
+    },
+    "monitor_thesis": {
+      "name": "get told when something matches your thesis",
+      "example_prompt": "Alert me whenever a company matching my thesis raises."
+    }
+  },
+  "assignments": {
+    "1": {
+      "mode": "alert_first",
+      "use_cases": [
+        {
+          "family": "hiring_growth",
+          "why_relevant": "A recruiting agency sells into a hiring plan, and the plan is visible before the req is posted.",
+          "example_alert": "US startups that raised seed-Series B in the last 7 days and mention growing the team."
+        },
+        {
+          "family": "funded_icp_match",
+          "why_relevant": "New funding is the budget behind the next set of roles.",
+          "example_alert": "AI startups that raised in the last 24 hours, 11-100 employees."
+        },
+        {
+          "family": "investor_portfolio",
+          "why_relevant": "A confirmed investor relationship is a warmer route into a portfolio than a cold list.",
+          "example_alert": "New rounds at companies backed by the funds you already work with.",
+          "portfolio_mode": "relationship_leverage",
+          "requires_context": [
+            "investor_connection"
+          ]
+        }
+      ]
+    },
+    "2": {
+      "mode": "alert_first",
+      "use_cases": [
+        {
+          "family": "geographic_expansion",
+          "why_relevant": "A company entering your market needs space in it, and that is the moment to be early.",
+          "example_alert": "Funded companies whose announcements mention opening a new office or entering a new market."
+        },
+        {
+          "family": "funded_icp_match",
+          "why_relevant": "A recent raise often precedes a space requirement.",
+          "example_alert": "Bay Area startups that raised in the past 24 hours."
+        },
+        {
+          "family": "investor_portfolio",
+          "why_relevant": "A landlord or investor relationship you already have reaches further than a cold approach.",
+          "example_alert": "New rounds at companies backed by investors you already know.",
+          "portfolio_mode": "relationship_leverage",
+          "requires_context": [
+            "investor_connection"
+          ]
+        }
+      ]
+    },
+    "4": {
+      "mode": "alert_first",
+      "use_cases": [
+        {
+          "family": "funded_icp_match",
+          "why_relevant": "A company that just raised is choosing where the money sits, usually within days.",
+          "example_alert": "A daily digest of every startup that raised in your segment."
+        },
+        {
+          "family": "geographic_expansion",
+          "why_relevant": "A new market means new banking and treasury needs.",
+          "example_alert": "Funded startups whose announcements mention entering a new country or market."
+        },
+        {
+          "family": "investor_portfolio",
+          "why_relevant": "Portfolio relationships convert far better than cold outreach in banking.",
+          "example_alert": "New rounds at companies backed by funds you already bank.",
+          "portfolio_mode": "relationship_leverage",
+          "requires_context": [
+            "investor_connection"
+          ]
+        }
+      ]
+    },
+    "5": {
+      "mode": "alert_first",
+      "use_cases": [
+        {
+          "family": "funded_icp_match",
+          "why_relevant": "A newly funded account has budget and no incumbent yet.",
+          "example_alert": "Companies in your ICP that raised in the last hour.",
+          "requires_context": [
+            "product_context"
+          ]
+        },
+        {
+          "family": "growth_momentum",
+          "why_relevant": "Customer and partnership milestones show the account is scaling into your product.",
+          "example_alert": "Companies in your segment announcing major customer wins or partnerships.",
+          "requires_context": [
+            "product_context"
+          ]
+        },
+        {
+          "family": "geographic_expansion",
+          "why_relevant": "Expansion creates the new team that becomes your buyer.",
+          "example_alert": "Companies opening an office in a market you cover.",
+          "requires_context": [
+            "target_buyer_role"
+          ]
+        }
+      ]
+    },
+    "6": {
+      "mode": "mcp_first",
+      "use_cases": [
+        {
+          "workflow": "find_relevant_investors",
+          "why_relevant": "Knowing which funds actually back your stage and sector is most of a raise."
+        },
+        {
+          "workflow": "research_investor_fit",
+          "why_relevant": "A fund that has never done your stage is a wasted meeting."
+        },
+        {
+          "workflow": "build_investor_outreach",
+          "why_relevant": "Outreach that cites a fund's real portfolio gets answered."
+        },
+        {
+          "workflow": "map_fundraising_market",
+          "why_relevant": "Seeing who is active right now tells you whether the window is open."
+        }
+      ]
+    },
+    "7": {
+      "mode": "mcp_first",
+      "use_cases": [
+        {
+          "workflow": "find_relevant_investors",
+          "why_relevant": "Your clients are paying you for exactly this list."
+        },
+        {
+          "workflow": "research_investor_fit",
+          "why_relevant": "Fit research is the work you would otherwise do by hand per client."
+        },
+        {
+          "workflow": "build_investor_outreach",
+          "why_relevant": "Grounded drafts scale the part of the service that takes longest."
+        },
+        {
+          "workflow": "map_fundraising_market",
+          "why_relevant": "A live market map is what keeps client advice current."
+        }
+      ]
+    },
+    "8": {
+      "mode": "mcp_first",
+      "use_cases": [
+        {
+          "workflow": "map_investment_thesis",
+          "why_relevant": "A thesis you can query is a sourcing engine rather than a document."
+        },
+        {
+          "workflow": "research_company_founder",
+          "why_relevant": "Founder track record is the fastest disqualifier."
+        },
+        {
+          "workflow": "identify_momentum",
+          "why_relevant": "Momentum outside the round is what separates a good company from a funded one."
+        },
+        {
+          "workflow": "unify_sourcing_context",
+          "why_relevant": "One view beats five tabs when you are deciding whether to take the call."
+        },
+        {
+          "family": "growth_momentum",
+          "why_relevant": "Operating milestones surface growth-stage candidates before they run a process.",
+          "example_alert": "Companies announcing revenue, customer or partnership milestones in your sectors."
+        },
+        {
+          "family": "funded_icp_match",
+          "why_relevant": "A recent round tells you who is already priced and who is not.",
+          "example_alert": "B2B SaaS companies raising Series B+ at $20M+ rounds."
+        },
+        {
+          "family": "investor_portfolio",
+          "why_relevant": "Watching peer firms shows where the market is moving before it is obvious.",
+          "example_alert": "New rounds led by the other firms you track.",
+          "portfolio_mode": "peer_activity"
+        }
+      ]
+    },
+    "9": {
+      "mode": "deferred",
+      "use_cases": []
+    },
+    "10": {
+      "mode": "alert_first",
+      "use_cases": [
+        {
+          "family": "geographic_expansion",
+          "why_relevant": "Crossing a border is the moment a company needs FX and cross-border rails.",
+          "example_alert": "Funded startups whose announcements mention international or new-market expansion."
+        },
+        {
+          "family": "funded_icp_match",
+          "why_relevant": "New funding usually precedes the first international hire or entity.",
+          "example_alert": "European startups raising US rounds this month."
+        },
+        {
+          "family": "growth_momentum",
+          "why_relevant": "A partnership or customer win abroad creates payment flows before the entity exists.",
+          "example_alert": "Companies announcing international customers or partnerships."
+        }
+      ]
+    },
+    "11": {
+      "mode": "alert_first",
+      "use_cases": [
+        {
+          "family": "hiring_growth",
+          "why_relevant": "Headcount growth is the trigger for payroll, benefits and HR tooling.",
+          "example_alert": "Companies signalling hiring plans, with People/HR contacts."
+        },
+        {
+          "family": "geographic_expansion",
+          "why_relevant": "A new country means a new employer of record and a new payroll problem.",
+          "example_alert": "Funded startups whose announcements mention hiring internationally."
+        },
+        {
+          "family": "funded_icp_match",
+          "why_relevant": "A raise is the budget behind the hiring plan.",
+          "example_alert": "Seed-Series B raises this week in your segment."
+        }
+      ]
+    },
+    "12": {
+      "mode": "alert_first",
+      "use_cases": [
+        {
+          "family": "funded_icp_match",
+          "why_relevant": "D&O becomes urgent the moment a priced round closes.",
+          "example_alert": "Series A+ raises this week with finance and operations contacts."
+        },
+        {
+          "family": "hiring_growth",
+          "why_relevant": "Headcount drives health and benefits requirements.",
+          "example_alert": "Companies materially growing headcount in your territory."
+        },
+        {
+          "family": "enterprise_readiness",
+          "why_relevant": "Enterprise customers force cyber and E&O cover.",
+          "example_alert": "Companies announcing enterprise customers or security certifications."
+        }
+      ]
+    },
+    "13": {
+      "mode": "alert_first",
+      "use_cases": [
+        {
+          "family": "enterprise_readiness",
+          "why_relevant": "SOC2 stops being optional the moment an enterprise deal is in play.",
+          "example_alert": "Companies announcing enterprise customers, security certifications or compliance hires."
+        },
+        {
+          "family": "geographic_expansion",
+          "why_relevant": "A new market brings a new regulatory regime with it.",
+          "example_alert": "Companies entering markets with their own data or privacy regimes."
+        },
+        {
+          "family": "funded_icp_match",
+          "why_relevant": "A raise funds the compliance programme that was deferred.",
+          "example_alert": "B2B startups that raised Series A/B in the last 30 days."
+        }
+      ]
+    },
+    "14": {
+      "mode": "alert_first",
+      "use_cases": [
+        {
+          "family": "hiring_growth",
+          "why_relevant": "A hiring platform sells into an open plan, not a closed one.",
+          "example_alert": "Companies signalling team growth, with recruiting contacts."
+        },
+        {
+          "family": "funded_icp_match",
+          "why_relevant": "Fresh funding is the budget behind the roles.",
+          "example_alert": "Raises in the last 7 days in your segment."
+        },
+        {
+          "family": "investor_portfolio",
+          "why_relevant": "Portfolio warmth beats a cold sequence into a talent team.",
+          "example_alert": "New rounds at companies backed by funds you already work with.",
+          "portfolio_mode": "relationship_leverage",
+          "requires_context": [
+            "investor_connection"
+          ]
+        }
+      ]
+    },
+    "15": {
+      "mode": "alert_first",
+      "use_cases": [
+        {
+          "family": "funded_icp_match",
+          "why_relevant": "A first priced round is when founders stop doing their own books.",
+          "example_alert": "Seed and Series A raises this week, with founder contacts."
+        },
+        {
+          "family": "geographic_expansion",
+          "why_relevant": "A new entity abroad creates a filing obligation immediately.",
+          "example_alert": "Companies opening entities in new jurisdictions."
+        },
+        {
+          "family": "growth_momentum",
+          "why_relevant": "Revenue milestones change the accounting a company needs.",
+          "example_alert": "Companies announcing revenue or customer milestones in your segment."
+        }
+      ]
+    },
+    "16": {
+      "mode": "alert_first",
+      "use_cases": [
+        {
+          "family": "funded_icp_match",
+          "why_relevant": "Newly funded companies are buying services they previously did without.",
+          "example_alert": "US companies Series B+ that raised in the last 24 hours.",
+          "requires_context": [
+            "product_context"
+          ]
+        },
+        {
+          "family": "growth_momentum",
+          "why_relevant": "Operating milestones say a company is scaling past what it can do in-house.",
+          "example_alert": "Companies announcing customer, partnership or revenue milestones.",
+          "requires_context": [
+            "product_context"
+          ]
+        },
+        {
+          "family": "investor_portfolio",
+          "why_relevant": "An investor relationship is the shortest route into a portfolio.",
+          "example_alert": "New rounds at companies backed by investors you already know.",
+          "portfolio_mode": "relationship_leverage",
+          "requires_context": [
+            "investor_connection"
+          ]
+        }
+      ]
+    },
+    "17": {
+      "mode": "alert_first",
+      "use_cases": [
+        {
+          "family": "funded_icp_match",
+          "why_relevant": "A first institutional round is a legal event before it is anything else.",
+          "example_alert": "First-time raises this month, with founder contacts."
+        },
+        {
+          "family": "geographic_expansion",
+          "why_relevant": "A new jurisdiction is a new set of filings and contracts.",
+          "example_alert": "Companies entering new jurisdictions."
+        },
+        {
+          "family": "enterprise_readiness",
+          "why_relevant": "Enterprise contracts pull legal in whether or not counsel exists yet.",
+          "example_alert": "Companies announcing enterprise customers or regulated-market entry."
+        }
+      ]
+    },
+    "18": {
+      "mode": "alert_first",
+      "use_cases": [
+        {
+          "family": "funded_icp_match",
+          "why_relevant": "A raise is when a company decides it needs to be heard.",
+          "example_alert": "Seed-Series A raises this week in consumer, with marketing contacts."
+        },
+        {
+          "family": "geographic_expansion",
+          "why_relevant": "Entering a market means launching into it.",
+          "example_alert": "Companies entering a new market or geography."
+        },
+        {
+          "family": "growth_momentum",
+          "why_relevant": "A milestone is the story; the story is the work.",
+          "example_alert": "Companies announcing customer, partnership or product milestones."
+        }
+      ]
+    },
+    "19": {
+      "mode": "mcp_first",
+      "use_cases": [
+        {
+          "workflow": "map_investment_thesis",
+          "why_relevant": "A queryable thesis turns sourcing from reactive into systematic."
+        },
+        {
+          "workflow": "research_company_founder",
+          "why_relevant": "Founder history is the fastest signal on a cold inbound."
+        },
+        {
+          "workflow": "identify_momentum",
+          "why_relevant": "Momentum between rounds is where the edge is."
+        },
+        {
+          "workflow": "unify_sourcing_context",
+          "why_relevant": "One view of a company before you commit partner time."
+        },
+        {
+          "workflow": "monitor_thesis",
+          "why_relevant": "Being told, rather than checking, is the point."
+        },
+        {
+          "family": "funded_icp_match",
+          "why_relevant": "Knowing who just raised tells you who is out of reach and who is not.",
+          "example_alert": "Developer-tools rounds under $15M, weekly."
+        },
+        {
+          "family": "growth_momentum",
+          "why_relevant": "Non-funding milestones surface companies before they run a process.",
+          "example_alert": "Companies announcing revenue or customer milestones in your thesis areas."
+        },
+        {
+          "family": "investor_portfolio",
+          "why_relevant": "Watching peer firms is how you see a thesis becoming consensus.",
+          "example_alert": "New rounds led by the funds you track.",
+          "portfolio_mode": "peer_activity"
+        }
+      ]
+    },
+    "20": {
+      "mode": "alert_first",
+      "use_cases": [
+        {
+          "family": "funded_icp_match",
+          "why_relevant": "A funded account in your exact ICP has budget and no incumbent.",
+          "example_alert": "Your ICP description, evaluated against every new round hourly.",
+          "requires_context": [
+            "product_context"
+          ]
+        },
+        {
+          "family": "growth_momentum",
+          "why_relevant": "Milestones show which accounts are scaling into your product now.",
+          "example_alert": "Companies in your segment announcing customer or partnership wins.",
+          "requires_context": [
+            "product_context"
+          ]
+        },
+        {
+          "family": "geographic_expansion",
+          "why_relevant": "A new market means a new team, and a new team is a new buyer.",
+          "example_alert": "Companies opening an office in a market you sell into.",
+          "requires_context": [
+            "target_buyer_role"
+          ]
+        }
+      ]
+    }
   }
 }

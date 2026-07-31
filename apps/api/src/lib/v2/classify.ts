@@ -47,6 +47,13 @@ export type V2Classification = {
    * you are about to email".
    */
   agreement: { top: number; total: number };
+  /**
+   * The model id the provider actually SERVED.
+   *
+   * Distinct from the one we asked for: OpenRouter routes, and a trace that
+   * cannot tell the two apart attributes a label to a model that never saw it.
+   */
+  model: string;
 };
 
 /** Built once from the registry. Exported for the version trace and tests. */
@@ -220,7 +227,7 @@ async function runModel(
   warnings: string[],
   agreement: { top: number; total: number },
   deadlineAt?: number
-): Promise<{ icpNumber: number | null; reasoning: string } | null> {
+): Promise<Vote | null> {
   // Resolve on the first two votes that agree, rather than waiting for the
   // slowest of three. A majority of three is decided the moment two match, so
   // waiting on the third buys nothing but latency — and latency here is the

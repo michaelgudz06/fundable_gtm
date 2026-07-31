@@ -75,6 +75,18 @@ function unterminated(text: string): string {
   return text.replace(/[.!?]+\s*$/, "");
 }
 
+/**
+ * The same, for text that will sit inside quotation marks.
+ *
+ * A quoted example prompt keeps its question mark — "Which funds led rounds
+ * here?" is a question and stripping the mark makes it read as a fragment — but
+ * a trailing full stop still goes, because the carrier sentence supplies one
+ * immediately after the closing quote.
+ */
+function unterminatedQuoted(text: string): string {
+  return text.replace(/\.\s*$/, "");
+}
+
 // ---------------------------------------------------------------------------
 // Variable resolution
 // ---------------------------------------------------------------------------
@@ -107,9 +119,13 @@ function resolveVariables(body: string, ctx: ComposeContext, useCase: UseCase | 
       ? `, with verified ${ctx.target_buyer_role} contact info,`
       : ", with verified buyer contact info,",
     // The example already ends in a period; the template supplies the sentence's.
-    primary_use_case_clause: useCase
-      ? `${proseCase(useCase.name)} — for example: ${unterminated(useCase.example_alert)}`
-      : "a deal alert matched to the companies you care about",
+    // An MCP workflow has a prompt, not an alert, and saying "for example: <an
+    // alert>" about one would describe a product that does not exist.
+    primary_use_case_clause: !useCase
+      ? "a deal alert matched to the companies you care about"
+      : useCase.workflow_type === "mcp"
+        ? `${proseCase(useCase.name)} — for example: "${unterminatedQuoted(useCase.example_prompt)}"`
+        : `${proseCase(useCase.name)} — for example: ${unterminated(useCase.example_alert)}`,
   };
 
   let out = body;
@@ -127,7 +143,10 @@ function resolveVariables(body: string, ctx: ComposeContext, useCase: UseCase | 
     .replace(/[ \t]{2,}/g, " ")
     .replace(/ ,/g, ",")
     .replace(/\bthe the\b/g, "the")
-    .replace(/(?<![.])([.!?])\.(?![.])(?=\s|$)/g, "$1");
+    .replace(/(?<![.])([.!?])\.(?![.])(?=\s|$)/g, "$1")
+    // A quoted question already ends the sentence: 'is that useful?".' reads as
+    // a stutter. The template supplies the period, so drop it after ?" and !".
+    .replace(/([?!]")\.(?=\s|$)/g, "$1");
   return out;
 }
 
@@ -234,16 +253,32 @@ export function validateTemplateSource(templateBody: string): ComposeIssue[] {
   return issues;
 }
 
+/**
+ * Which frame the template should use for this lead.
+ *
+ * `body` is the ALERT frame — the common case and the historical default. The
+ * other two exist because composing an alert sentence around something that is
+ * not an alert produces copy that is confidently wrong: an MCP-first ICP read
+ * "One useful alert ... is map fundraising market", and a deferred ICP asserted
+ * an alert that had never been selected.
+ */
+function frameFor(template: TemplateEntry, primary: UseCase | null): string {
+  if (!primary) return template.body_variants?.none ?? template.body;
+  if (primary.workflow_type === "mcp") return template.body_variants?.mcp ?? template.body;
+  return template.body;
+}
+
 export function composeFromTemplate(input: {
   template: TemplateEntry;
   useCases: UseCase[];
   ctx: ComposeContext;
 }): { body: string; issues: ComposeIssue[] } {
   const primary = input.useCases[0] ?? null;
-  const body = resolveVariables(input.template.body, input.ctx, primary).trim();
+  const frame = frameFor(input.template, primary);
+  const body = resolveVariables(frame, input.ctx, primary).trim();
   return {
     body,
-    issues: [...missingContext(input.template.body, input.ctx), ...validateEmailBody(body)],
+    issues: [...missingContext(frame, input.ctx), ...validateEmailBody(body)],
   };
 }
 

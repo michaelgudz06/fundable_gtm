@@ -15,6 +15,7 @@ import {
   icpDescriptor,
   icpEntries,
   icpLabel,
+  isDeferred,
   useCasesFor,
 } from "../src/lib/v2/registry";
 import { asCompanyName, asFactValue, buildClassifierPrompt, researchTarget } from "../src/lib/v2/classify";
@@ -25,6 +26,14 @@ import {
   proseCase,
   validateEmailBody,
 } from "../src/lib/v2/compose";
+
+/** Everything a caller could know, so nothing is dropped for a missing precondition. */
+const FULL_CONTEXT = {
+  investor_connection: true,
+  product_context: "startup and investor data",
+  target_buyer_role: "COO",
+  territory: "Bay Area",
+};
 
 describe("icp registry (v2)", () => {
   test("preserves numbering with no #3, includes #19 Investor and the #20 catch-all", () => {
@@ -43,13 +52,34 @@ describe("icp registry (v2)", () => {
     assert.equal(icpLabel(3 as never), "Not Core ICP");
   });
 
-  test("every core ICP has 1-3 use cases with all four fields; Not Core has none", () => {
+  test("every core ICP selects 0-3 use cases, each fully formed; Not Core selects none", () => {
     for (const e of icpEntries()) {
-      const ucs = useCasesFor(e.number);
-      assert.ok(ucs.length >= 1 && ucs.length <= 3, `#${e.number}`);
-      for (const u of ucs) {
-        assert.ok(u.id && u.name && u.why_relevant && u.example_alert, `#${e.number}/${u.id}`);
+      // Full context, so nothing is dropped for a missing precondition.
+      const ucs = useCasesFor(e.number, {
+        investor_connection: true,
+        product_context: "startup data",
+        target_buyer_role: "COO",
+        territory: "Bay Area",
+      });
+      assert.ok(ucs.length <= 3, `#${e.number} returned more than three (USE-002)`);
+      if (isDeferred(e.number)) {
+        assert.equal(ucs.length, 0, `#${e.number} is deferred and must select nothing (USE-006)`);
+        continue;
       }
+      assert.ok(ucs.length >= 1, `#${e.number} selected nothing and is not deferred`);
+      for (const u of ucs) {
+        assert.ok(u.id && u.name && u.why_relevant, `#${e.number}/${u.id}`);
+        if (u.workflow_type === "alert") {
+          assert.ok(u.example_alert, `#${e.number}/${u.id} has no example_alert`);
+          assert.equal(u.configuration.family, u.id);
+        } else {
+          assert.ok(u.example_prompt, `#${e.number}/${u.id} has no example_prompt`);
+          assert.equal(u.configuration.workflow, u.id);
+        }
+      }
+      // USE-003: at most one recommendation per alert family.
+      const fams = ucs.filter((u) => u.workflow_type === "alert").map((u) => u.id);
+      assert.equal(new Set(fams).size, fams.length, `#${e.number} repeated an alert family`);
     }
     assert.deepEqual(useCasesFor(null), []);
   });
@@ -175,22 +205,24 @@ describe("English mechanics (regressions from the real visitor list)", () => {
     const visitor = getTemplate("website_visitor_use_case")!;
     const investor = composeFromTemplate({
       template: visitor,
-      useCases: useCasesFor(19),
+      useCases: useCasesFor(19, FULL_CONTEXT),
       ctx: { first_name: "Jeremy", sender_name: "Jacob", icp_descriptor: icpDescriptor(19) ?? undefined },
     });
     assert.deepEqual(investor.issues, [], JSON.stringify(investor.issues));
-    assert.match(investor.body, /for an investing team is/);
+    // #19 is MCP-first in SPEC §3, so the MCP frame applies — asserting the
+    // alert sentence here would be asserting the bug this rebuild removed.
+    assert.match(investor.body, /Fundable runs inside Claude and ChatGPT/);
+    assert.match(investor.body, /an investing team can do with it is/);
     assert.doesNotMatch(investor.body, /\.\./);
-    assert.match(investor.body, /under \$15M, weekly\.\n/);
 
     // And: "One useful alert for a startup gtm team is ... hourly.."
     const gtm = composeFromTemplate({
       template: visitor,
-      useCases: useCasesFor(20),
+      useCases: useCasesFor(20, FULL_CONTEXT),
       ctx: { first_name: "Max", sender_name: "Jacob", icp_descriptor: icpDescriptor(20) ?? undefined },
     });
     assert.deepEqual(gtm.issues, [], JSON.stringify(gtm.issues));
-    assert.match(gtm.body, /for a startup GTM team is/);
+    assert.match(gtm.body, /One useful alert for a startup GTM team is/);
     assert.doesNotMatch(gtm.body, /\.\./);
   });
 
@@ -200,7 +232,7 @@ describe("English mechanics (regressions from the real visitor list)", () => {
       for (const e of icpEntries()) {
         const { body, issues } = composeFromTemplate({
           template: t,
-          useCases: useCasesFor(e.number),
+          useCases: useCasesFor(e.number, FULL_CONTEXT),
           ctx: { first_name: "Sam", sender_name: "Jacob", icp_descriptor: icpDescriptor(e.number) ?? undefined },
         });
         assert.deepEqual(issues, [], `${id} / ICP #${e.number}: ${JSON.stringify(issues)}`);
@@ -245,7 +277,7 @@ describe("English mechanics (regressions from the real visitor list)", () => {
 
   test("an ellipsis survives composition; a doubled period does not", () => {
     const t = getTemplate("website_visitor_use_case")!;
-    const raw = { ...t, body: "{{greeting}}\n\nQuick one... what are you tracking?\n\nBest,\n{{sender_name}}" };
+    const raw = { ...t, body_variants: undefined, body: "{{greeting}}\n\nQuick one... what are you tracking?\n\nBest,\n{{sender_name}}" };
     const { body, issues } = composeFromTemplate({
       template: raw,
       useCases: [],
@@ -255,6 +287,20 @@ describe("English mechanics (regressions from the real visitor list)", () => {
     assert.deepEqual(issues, [], JSON.stringify(issues));
     // Two dots is still a defect, wherever it comes from.
     assert.ok(validateEmailBody("Hey Reed,\n\nRaised last week..").some((i) => i.rule === "double-punctuation"));
+  });
+
+  test("a quoted MCP prompt keeps its question mark and does not stutter", () => {
+    // The MCP frame ends with a quoted example, and the carrier supplies the
+    // sentence's period. Both punctuation marks surviving reads as 'months?".'
+    const t = getTemplate("website_visitor_use_case")!;
+    const { body, issues } = composeFromTemplate({
+      template: t,
+      useCases: useCasesFor(6, FULL_CONTEXT),
+      ctx: { first_name: "Sam", sender_name: "Jacob", icp_descriptor: icpDescriptor(6) ?? undefined },
+    });
+    assert.deepEqual(issues, [], JSON.stringify(issues));
+    assert.match(body, /months\?"/, "a quoted question keeps its mark");
+    assert.doesNotMatch(body, /\?"\./, "and does not also carry the carrier's period");
   });
 
   test("prose casing lowers positional capitals and keeps meaningful ones", () => {
@@ -268,7 +314,7 @@ describe("English mechanics (regressions from the real visitor list)", () => {
 
   test("no use-case name keeps a stray capital mid-sentence", () => {
     for (const e of icpEntries()) {
-      for (const uc of useCasesFor(e.number)) {
+      for (const uc of useCasesFor(e.number, FULL_CONTEXT)) {
         const prose = proseCase(uc.name);
         const firstWord = prose.split(" ")[0] ?? "";
         assert.ok(
@@ -281,7 +327,7 @@ describe("English mechanics (regressions from the real visitor list)", () => {
 
   test("a bare name token with no value is refused, not silently emptied", () => {
     const t = getTemplate("website_visitor_use_case")!;
-    const raw = { ...t, body: "Hi {{first_name}}!\n\nWorth a look?\n\nBest,\n{{sender_name}}" };
+    const raw = { ...t, body_variants: undefined, body: "Hi {{first_name}}!\n\nWorth a look?\n\nBest,\n{{sender_name}}" };
     const { issues } = composeFromTemplate({ template: raw, useCases: [], ctx: { sender_name: "Jacob" } });
     assert.ok(issues.some((i) => i.rule === "missing-context"), JSON.stringify(issues));
     // With a value, the same template is fine.
@@ -294,20 +340,24 @@ describe("English mechanics (regressions from the real visitor list)", () => {
     assert.match(ok.body, /^Hi Reed!/);
   });
 
-  test("no use-case name reads as a verb or a UI label in its carrier sentence", () => {
-    // "One useful alert for X is <name>" requires a noun phrase. An imperative
-    // ("claim newly funded accounts first") shipped before this test existed.
+  test("an ALERT name is a noun phrase; an MCP name is deliberately a verb phrase", () => {
+    // "One useful alert for X is <name>" requires a noun phrase. But the MCP
+    // frame reads "One thing X can do with it is <name>", which requires the
+    // opposite — and the MCP workflows are literally named find_/build_/monitor_.
+    // Scoping this to alerts is the fix; deleting it would drop a real guard.
     const t = getTemplate("website_visitor_use_case")!;
     const IMPERATIVE_OPENERS = /^(claim|get|find|track|see|use|build|start|send|watch|monitor)\b/i;
     for (const e of icpEntries()) {
-      for (const uc of useCasesFor(e.number)) {
-        assert.doesNotMatch(proseCase(uc.name), IMPERATIVE_OPENERS, `#${e.number}/${uc.id} is imperative`);
-        assert.doesNotMatch(uc.name, /\s\/\s/, `#${e.number}/${uc.id} reads as a UI label`);
-        assert.doesNotMatch(uc.name, /\b(the (broker|founder|investor)'s)\b/i, `#${e.number}/${uc.id} is third person`);
+      for (const uc of useCasesFor(e.number, FULL_CONTEXT)) {
+        if (uc.workflow_type === "alert") {
+          assert.doesNotMatch(proseCase(uc.name), IMPERATIVE_OPENERS, `#${e.number}/${uc.id} is imperative`);
+          assert.doesNotMatch(uc.name, /\s\/\s/, `#${e.number}/${uc.id} reads as a UI label`);
+          assert.doesNotMatch(uc.name, /\b(the (broker|founder|investor)'s)\b/i, `#${e.number}/${uc.id} is third person`);
+        }
       }
       const { issues } = composeFromTemplate({
         template: t,
-        useCases: useCasesFor(e.number),
+        useCases: useCasesFor(e.number, FULL_CONTEXT),
         ctx: { first_name: "Sam", sender_name: "Jacob", icp_descriptor: icpDescriptor(e.number) ?? undefined },
       });
       assert.deepEqual(issues, [], `#${e.number}: ${JSON.stringify(issues)}`);

@@ -1,5 +1,5 @@
 {
-  "version": "2.1.0",
+  "version": "3.0.0",
   "//": "Template catalog per SPEC-v2 §4 (TPL-001..005). Frames, not final prose. Variables use {{name}}; every variable must resolve or fall back grammatically (GEN-005) — a raw token in output is a validation failure. Bodies are derived from Jacob's real sent copy; provenance names the source but does NOT auto-approve embedded claims: anything numeric/customer/trial was moved to approved_claims.json as pending_review and REMOVED from these frames until approved.",
   "greeting_fallback": "Hi there,",
   "generic_fallbacks": {
@@ -13,96 +13,179 @@
   "templates": [
     {
       "id": "signup_paid_initial",
-      "version": "1.0.0",
+      "version": "2.0.0",
       "source": "n8n signup workflow",
-      "allowed_message_types": ["signup_paid"],
+      "allowed_message_types": [
+        "signup_paid"
+      ],
       "audience": "new paid signup",
       "required_context": [],
-      "optional_context": ["first_name", "sender_name"],
+      "optional_context": [
+        "first_name",
+        "sender_name"
+      ],
       "cta_policy": "offer setup help for ONE use case; no pricing language",
-      "claim_refs": ["capability-deal-alerts", "capability-mcp"],
-      "body": "{{greeting}}\n\nThanks for signing up — saw you're at {{company_or_generic}}. The fastest way to get value is usually {{primary_use_case_clause}}.\n\nWant me to help you set that up? Takes a few minutes.\n\nBest,\n{{sender_name}}"
+      "claim_refs": [
+        "capability-deal-alerts",
+        "capability-mcp"
+      ],
+      "body": "{{greeting}}\n\nThanks for signing up — saw you're at {{company_or_generic}}. The fastest way to get value is usually {{primary_use_case_clause}}.\n\nWant me to help you set that up? Takes a few minutes.\n\nBest,\n{{sender_name}}",
+      "body_variants": {
+        "mcp": "{{greeting}}\n\nThanks for signing up — saw you're at {{company_or_generic}}. Fundable runs inside Claude and ChatGPT, and the fastest way in is usually to {{primary_use_case_clause}}.\n\nWant me to help you set that up? Takes a few minutes.\n\nBest,\n{{sender_name}}",
+        "none": "{{greeting}}\n\nThanks for signing up — saw you're at {{company_or_generic}}. Happy to walk you through the fastest way to get value out of the data, if that would help.\n\nBest,\n{{sender_name}}"
+      }
     },
     {
       "id": "signup_unpaid_initial",
-      "version": "1.0.0",
+      "version": "2.0.0",
       "source": "n8n signup workflow",
-      "allowed_message_types": ["signup_unpaid"],
+      "allowed_message_types": [
+        "signup_unpaid"
+      ],
       "audience": "new unpaid signup",
       "required_context": [],
-      "optional_context": ["first_name", "sender_name"],
+      "optional_context": [
+        "first_name",
+        "sender_name"
+      ],
       "cta_policy": "fast first value + setup offer; NEVER invent trial/pricing/cancellation terms",
-      "claim_refs": ["capability-deal-alerts"],
-      "body": "{{greeting}}\n\nThanks for checking out Fundable. Quickest first win for {{company_or_generic}}: {{primary_use_case_clause}}.\n\nHappy to get that running with you — takes a few minutes.\n\nBest,\n{{sender_name}}"
+      "claim_refs": [
+        "capability-deal-alerts"
+      ],
+      "body": "{{greeting}}\n\nThanks for checking out Fundable. Quickest first win for {{company_or_generic}}: {{primary_use_case_clause}}.\n\nHappy to get that running with you — takes a few minutes.\n\nBest,\n{{sender_name}}",
+      "body_variants": {
+        "mcp": "{{greeting}}\n\nThanks for checking out Fundable. It runs inside Claude and ChatGPT — quickest first win for {{company_or_generic}} is to {{primary_use_case_clause}}.\n\nHappy to get that running with you — takes a few minutes.\n\nBest,\n{{sender_name}}",
+        "none": "{{greeting}}\n\nThanks for checking out Fundable. Tell me what you're trying to keep track of and I'll point you at the quickest way to get there.\n\nBest,\n{{sender_name}}"
+      }
     },
     {
       "id": "website_visitor_use_case",
-      "version": "1.1.0",
+      "version": "2.0.0",
       "source": "Orange Slice messaging examples (cross-border conversation)",
-      "allowed_message_types": ["website_visitor"],
+      "allowed_message_types": [
+        "website_visitor"
+      ],
       "audience": "identified company-level website visitor",
       "required_context": [],
-      "optional_context": ["first_name", "sender_name"],
+      "optional_context": [
+        "first_name",
+        "sender_name"
+      ],
       "cta_policy": "low-pressure setup offer; NEVER claim signup/payment; NEVER reveal tracking context",
-      "claim_refs": ["capability-deal-alerts"],
-      "body": "{{greeting}}\n\nWe have Deal Alerts where you can track companies after a raise. One useful alert for {{icp_descriptor_phrase}} is {{primary_use_case_clause}}.\n\nLet me know if worth finding time to get you set up,\n{{sender_name}}"
+      "claim_refs": [
+        "capability-deal-alerts"
+      ],
+      "body": "{{greeting}}\n\nWe have Deal Alerts where you can track companies after a raise. One useful alert for {{icp_descriptor_phrase}} is {{primary_use_case_clause}}.\n\nLet me know if worth finding time to get you set up,\n{{sender_name}}",
+      "body_variants": {
+        "mcp": "{{greeting}}\n\nFundable runs inside Claude and ChatGPT over MCP. One thing {{icp_descriptor_phrase}} can do with it is {{primary_use_case_clause}}.\n\nLet me know if worth finding time to get you set up,\n{{sender_name}}",
+        "none": "{{greeting}}\n\nThanks for taking a look at Fundable. We track startup funding rounds, investors and people in real time — happy to show you what that looks like for your team.\n\nLet me know if worth finding time,\n{{sender_name}}"
+      }
     },
     {
       "id": "followup_alerts_paid",
-      "version": "1.1.0",
+      "version": "2.0.0",
       "source": "Resend follow-ups",
-      "allowed_message_types": ["nurture"],
+      "allowed_message_types": [
+        "nurture"
+      ],
       "audience": "paid user, no alert created yet",
       "required_context": [],
-      "optional_context": ["first_name", "sender_name"],
+      "optional_context": [
+        "first_name",
+        "sender_name"
+      ],
       "cta_policy": "drive first alert creation",
-      "claim_refs": ["capability-deal-alerts"],
-      "body": "{{greeting}}\n\nNoticed you haven't set up an alert yet. For {{icp_descriptor_phrase_or_generic}}, the one I'd start with: {{primary_use_case_clause}}.\n\nWant me to set it up with you?\n\nBest,\n{{sender_name}}"
+      "claim_refs": [
+        "capability-deal-alerts"
+      ],
+      "body": "{{greeting}}\n\nNoticed you haven't set up an alert yet. For {{icp_descriptor_phrase_or_generic}}, the one I'd start with: {{primary_use_case_clause}}.\n\nWant me to set it up with you?\n\nBest,\n{{sender_name}}",
+      "body_variants": {
+        "mcp": "{{greeting}}\n\nNoticed you haven't connected Fundable to Claude yet. For {{icp_descriptor_phrase_or_generic}}, the one I'd start with: {{primary_use_case_clause}}.\n\nWant me to set it up with you?\n\nBest,\n{{sender_name}}",
+        "none": "{{greeting}}\n\nNoticed you haven't set anything up yet. Tell me what you're trying to track and I'll get it running with you.\n\nBest,\n{{sender_name}}"
+      }
     },
     {
       "id": "followup_alerts_unpaid",
-      "version": "1.0.0",
+      "version": "2.0.0",
       "source": "Resend follow-ups",
-      "allowed_message_types": ["nurture"],
+      "allowed_message_types": [
+        "nurture"
+      ],
       "audience": "unpaid signup",
       "required_context": [],
-      "optional_context": ["first_name", "sender_name"],
+      "optional_context": [
+        "first_name",
+        "sender_name"
+      ],
       "cta_policy": "one fast-value alert; no invented trial terms",
-      "claim_refs": ["capability-deal-alerts"],
-      "body": "{{greeting}}\n\nOne alert worth trying: {{primary_use_case_clause}}.\n\nTakes a couple of minutes to set up — happy to do it with you.\n\nBest,\n{{sender_name}}"
+      "claim_refs": [
+        "capability-deal-alerts"
+      ],
+      "body": "{{greeting}}\n\nOne alert worth trying: {{primary_use_case_clause}}.\n\nTakes a couple of minutes to set up — happy to do it with you.\n\nBest,\n{{sender_name}}",
+      "body_variants": {
+        "mcp": "{{greeting}}\n\nOne thing worth trying: Fundable inside Claude, where you can {{primary_use_case_clause}}.\n\nWant me to set it up with you?\n\nBest,\n{{sender_name}}",
+        "none": "{{greeting}}\n\nHappy to help you get set up whenever it's useful — just tell me what you're trying to keep track of.\n\nBest,\n{{sender_name}}"
+      }
     },
     {
       "id": "followup_api",
-      "version": "1.0.0",
+      "version": "2.0.0",
       "source": "Resend follow-ups",
-      "allowed_message_types": ["nurture"],
+      "allowed_message_types": [
+        "nurture"
+      ],
       "audience": "user with an existing workflow/stack",
       "required_context": [],
-      "optional_context": ["first_name", "sender_name"],
+      "optional_context": [
+        "first_name",
+        "sender_name"
+      ],
       "cta_policy": "connect data to their workflow",
-      "claim_refs": ["capability-api"],
-      "body": "{{greeting}}\n\nIf your team already has a workflow for sourcing, Fundable's data is available over an API — {{primary_use_case_clause}}.\n\nWorth a look?\n\nBest,\n{{sender_name}}"
+      "claim_refs": [
+        "capability-api"
+      ],
+      "body": "{{greeting}}\n\nIf your team already has a workflow for sourcing, Fundable's data is available over an API — {{primary_use_case_clause}}.\n\nWorth a look?\n\nBest,\n{{sender_name}}",
+      "body_variants": {
+        "mcp": "{{greeting}}\n\nIf you'd rather work in Claude than in a dashboard, Fundable connects over MCP — you can {{primary_use_case_clause}}.\n\nHappy to point you at the docs.\n\nBest,\n{{sender_name}}",
+        "none": "{{greeting}}\n\nIf you'd rather pull Fundable data straight into your own workflow, the API is there. Happy to point you at the docs.\n\nBest,\n{{sender_name}}"
+      }
     },
     {
       "id": "followup_mcp",
-      "version": "1.0.0",
+      "version": "2.0.0",
       "source": "Resend follow-ups",
-      "allowed_message_types": ["nurture"],
+      "allowed_message_types": [
+        "nurture"
+      ],
       "audience": "user who works inside AI assistants",
       "required_context": [],
-      "optional_context": ["first_name", "sender_name"],
+      "optional_context": [
+        "first_name",
+        "sender_name"
+      ],
       "cta_policy": "MCP setup offer",
-      "claim_refs": ["capability-mcp"],
-      "body": "{{greeting}}\n\nYou can use Fundable directly inside Claude or ChatGPT — {{primary_use_case_clause}}.\n\nHappy to help you connect it.\n\nBest,\n{{sender_name}}"
+      "claim_refs": [
+        "capability-mcp"
+      ],
+      "body": "{{greeting}}\n\nYou can use Fundable directly inside Claude or ChatGPT — {{primary_use_case_clause}}.\n\nHappy to help you connect it.\n\nBest,\n{{sender_name}}",
+      "body_variants": {
+        "mcp": "{{greeting}}\n\nFundable runs inside Claude and ChatGPT — you can {{primary_use_case_clause}}.\n\nWant me to walk you through connecting it?\n\nBest,\n{{sender_name}}",
+        "none": "{{greeting}}\n\nFundable runs inside Claude and ChatGPT if you'd rather ask questions than click through a dashboard. Want me to walk you through connecting it?\n\nBest,\n{{sender_name}}"
+      }
     },
     {
       "id": "followup_use_case_question",
       "version": "1.0.0",
       "source": "Resend follow-ups",
-      "allowed_message_types": ["nurture"],
+      "allowed_message_types": [
+        "nurture"
+      ],
       "audience": "signup with unknown intent",
       "required_context": [],
-      "optional_context": ["first_name", "sender_name"],
+      "optional_context": [
+        "first_name",
+        "sender_name"
+      ],
       "cta_policy": "one question, no pitch",
       "claim_refs": [],
       "body": "{{greeting}}\n\nQuick question so I can point you at the right thing: are you mainly after new companies to reach, research on specific companies, or data for a workflow you already run?\n\nBest,\n{{sender_name}}"
@@ -111,13 +194,24 @@
       "id": "cold_outbound_cre_daily_raise",
       "version": "1.0.0",
       "source": "CRE outbound (Reed example, spec §2)",
-      "allowed_message_types": ["cold_outbound"],
+      "allowed_message_types": [
+        "cold_outbound"
+      ],
       "audience": "CRE broker (#2)",
       "required_context": [],
-      "optional_context": ["first_name", "territory", "target_buyer_role", "sender_name"],
+      "optional_context": [
+        "first_name",
+        "territory",
+        "target_buyer_role",
+        "sender_name"
+      ],
       "cta_policy": "single low-pressure question; never imply a visit or signup",
-      "claim_refs": ["capability-deal-alerts", "capability-buyer-contacts"],
+      "claim_refs": [
+        "capability-deal-alerts",
+        "capability-buyer-contacts"
+      ],
       "body": "{{greeting}}\n\nWondering if a daily update with {{territory_or_generic}} startups that raised in the past 24 hours{{buyer_contact_clause}} would be useful for sourcing?\n\nBest,\n{{sender_name}}"
     }
-  ]
+  ],
+  "//variants": "3.0.0: templates that reference a use case now carry body_variants for the MCP-first and no-use-case cases. The default `body` is the ALERT frame. Without this an MCP-first ICP composed \"One useful alert ... is map fundraising market\", and a deferred ICP (#9) asserted an alert that was never selected. Which frame applies is decided in code; the prose stays here."
 }
