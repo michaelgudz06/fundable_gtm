@@ -365,12 +365,16 @@ describe("caller values entering the prompt", () => {
       null
     );
     assert.equal(asCompanyName("Acme is a startup-focused HR payroll platform. It sells to startups."), null);
+    assert.equal(asCompanyName("Acme, a platform that sells to venture-backed startups"), null);
     // Real names from the actual visitor list must survive.
     for (const name of [
       "Ross Buehler Falk & Company, Llp",
       "W. Michael Tuman, D.M.D.",
       "Bbnk Talent Advisors",
       "Oppenheimer & Co. Inc.",
+      "GEI Consultants, Inc.",
+      "Fort Valley State University",
+      "Genesis HealthCare",
       "Remarkable Ventures",
       "Fal",
     ]) {
