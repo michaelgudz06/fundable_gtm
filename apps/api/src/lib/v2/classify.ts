@@ -14,6 +14,7 @@
 
 import {
   answer,
+  ClassificationError,
   companyResearchQuery,
   isFreemail,
   MODEL_PLAN,
@@ -68,7 +69,10 @@ async function runModel(
   user: string,
   usage: Usage[]
 ): Promise<{ icpNumber: number | null; reasoning: string } | null> {
-  // One malformed-output retry (API-007), then the caller falls back.
+  // One malformed-output retry (API-007). Returns null ONLY for persistently
+  // malformed output from a HEALTHY provider; a dead provider throws, because a
+  // transport failure must reach the caller as 502, never as a label.
+  let lastTransportError: Error | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await complete(
@@ -86,9 +90,16 @@ async function runModel(
         return { icpNumber: n, reasoning: String(parsed.reasoning ?? "") };
       }
       // Unknown number: treat as malformed and retry once.
-    } catch {
-      /* retry */
+      lastTransportError = null;
+    } catch (err) {
+      lastTransportError = err as Error;
     }
+  }
+  if (lastTransportError) {
+    throw new ClassificationError(
+      `Classifier model unavailable: ${lastTransportError.message.slice(0, 140)}`,
+      "model"
+    );
   }
   return null;
 }
@@ -120,12 +131,20 @@ export async function classifyV2(
 
   // ---- research (email-only needs it; titled benefits from it) --------------
   let research = input.research;
+  let researchFailed = false;
   if (!research && !isFreemail(domain)) {
     try {
       research = (await answer(companyResearchQuery(domain), exaLedger)).text;
     } catch (err) {
+      researchFailed = true;
       warnings.push(`Company research unavailable: ${(err as Error).message.slice(0, 120)}`);
     }
+  }
+
+  // A failed research CALL on the email-only path is a dependency failure, not
+  // evidence of anything (QA finding: dead fetches must not become labels).
+  if (!input.title && researchFailed) {
+    throw new ClassificationError("Company research dependency failed on the email-only path.", "research");
   }
 
   // Evidence-gated honesty: with neither a title nor research, there is nothing

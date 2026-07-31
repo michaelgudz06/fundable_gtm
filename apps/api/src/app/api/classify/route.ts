@@ -17,6 +17,7 @@
  */
 
 import {
+  ClassificationError,
   classifyIcp,
   newExaLedger,
   newLedger,
@@ -101,7 +102,17 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  const result = await classifyIcp({ email, title, company }, exa);
+  let result;
+  try {
+    result = await classifyIcp({ email, title, company }, exa);
+  } catch (err) {
+    // Infrastructure failure is a 502 the caller can retry — never a 200 with
+    // a confident "Not Core ICP" they would persist (QA finding).
+    if (err instanceof ClassificationError) {
+      return error(502, "CLASSIFIER_UNAVAILABLE", err.message, { cause: err.cause_kind });
+    }
+    throw err;
+  }
 
   return Response.json({
     icp: result.icp,
