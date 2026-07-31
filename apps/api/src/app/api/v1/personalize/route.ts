@@ -71,7 +71,20 @@ type RequestBody = {
   additional_context?: Record<string, unknown>;
 };
 
+/**
+ * Wall-clock time a caller sees is handler time + platform time (cold boot,
+ * queueing, network). Only the first is ours to fix, and on the first run of a
+ * real 29-lead list the two differed by more than a minute — so the split is
+ * reported on every response instead of being guessed at from the outside.
+ */
 export async function POST(req: Request): Promise<Response> {
+  const started = Date.now();
+  const res = await handle(req);
+  res.headers.set("X-Handler-Ms", String(Date.now() - started));
+  return res;
+}
+
+async function handle(req: Request): Promise<Response> {
   const auth = checkAuth(req);
   if (!auth.ok) return err(auth.status, auth.status === 401 ? "UNAUTHORIZED" : "NOT_CONFIGURED", auth.message);
   const rate = checkRateLimit(auth.keyHash);

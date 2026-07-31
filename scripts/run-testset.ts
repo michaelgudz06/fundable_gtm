@@ -206,6 +206,19 @@ function report(results: Outcome[], meta: { base: string; variant: string; start
   lines.push(`| Hard gate, no output | ${counts("no_output")} |`);
   lines.push(`| Errors | ${counts("request_error")} |`);
   lines.push(`| Latency p50 / p95 / max | ${p(0.5)}ms / ${p(0.95)}ms / ${ms[ms.length - 1] ?? 0}ms |`);
+  const handler = results
+    .map((r) => Number(r.headers["x-handler-ms"] ?? NaN))
+    .filter((n) => Number.isFinite(n))
+    .sort((a, b) => a - b);
+  if (handler.length) {
+    const hp = (q: number) => handler[Math.min(handler.length - 1, Math.floor(handler.length * q))] ?? 0;
+    lines.push(`| In-handler p50 / p95 / max | ${hp(0.5)}ms / ${hp(0.95)}ms / ${handler[handler.length - 1] ?? 0}ms |`);
+    const overhead = results
+      .map((r) => r.ms - Number(r.headers["x-handler-ms"] ?? NaN))
+      .filter((n) => Number.isFinite(n))
+      .sort((a, b) => a - b);
+    lines.push(`| Platform overhead (cold boot + queue + network) max | ${overhead[overhead.length - 1] ?? 0}ms |`);
+  }
   lines.push("");
 
   lines.push("## Every row");
