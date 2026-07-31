@@ -37,10 +37,13 @@ export type V2Classification = {
   /** Milliseconds per upstream leg, so a slow request can be attributed. */
   timings: { research: number; model: number };
   /**
-   * How decisive the vote was: 3/3 means every independent vote agreed, 2/3
-   * means one dissented. A caller routing to human review wants this — it is
-   * the difference between "confident" and "the classifier nearly said
-   * something else about a person you are about to email".
+   * How decisive the vote was, over the votes that DECIDED it — the tally stops
+   * as soon as a majority exists, so 2/2 means the first two agreed and the
+   * third was not waited for, while 2/3 means one actively dissented.
+   *
+   * A caller routing to human review wants this: 2/3 is the difference between
+   * "confident" and "the classifier nearly said something else about a person
+   * you are about to email".
    */
   agreement: { top: number; total: number };
 };
@@ -186,14 +189,36 @@ async function runModel(
   warnings: string[],
   agreement: { top: number; total: number }
 ): Promise<{ icpNumber: number | null; reasoning: string } | null> {
-  const settled = await Promise.allSettled(
-    Array.from({ length: CLASSIFIER_VOTES }, () => oneVote(user, usage))
-  );
+  // Resolve on the first two votes that agree, rather than waiting for the
+  // slowest of three. A majority of three is decided the moment two match, so
+  // waiting on the third buys nothing but latency — and latency here is the
+  // difference between meeting the 15s bar on a lead's first sighting and not.
+  // Stragglers are left to finish; their tokens are already committed.
+  const pending = Array.from({ length: CLASSIFIER_VOTES }, () => oneVote(user, usage));
+  const settled: PromiseSettledResult<Vote | null>[] = [];
+  const votes: Vote[] = [];
 
-  const votes = settled
-    .filter((s): s is PromiseFulfilledResult<Vote | null> => s.status === "fulfilled")
-    .map((s) => s.value)
-    .filter((v): v is Vote => v !== null);
+  await new Promise<void>((done) => {
+    let outstanding = pending.length;
+    const counts = new Map<string, number>();
+    for (const p of pending) {
+      p.then(
+        (value) => {
+          settled.push({ status: "fulfilled", value });
+          if (value) {
+            votes.push(value);
+            const key = value.icpNumber === null ? "not_core" : String(value.icpNumber);
+            const n = (counts.get(key) ?? 0) + 1;
+            counts.set(key, n);
+            if (n * 2 > CLASSIFIER_VOTES) done();
+          }
+        },
+        (reason) => settled.push({ status: "rejected", reason })
+      ).finally(() => {
+        if (--outstanding === 0) done();
+      });
+    }
+  });
 
   if (!votes.length) {
     // Every vote failed. A transport failure must reach the caller as a 502,
