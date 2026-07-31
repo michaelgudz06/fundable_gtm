@@ -51,6 +51,7 @@ type Lead = {
   keyLabel: string;
   bucket: "core" | "not_core";
   title: string;
+  company?: string | null;
 };
 
 async function classify(lead: Lead): Promise<{ label: string | null; status: number; ms: number }> {
@@ -65,7 +66,11 @@ async function classify(lead: Lead): Promise<{ label: string | null; status: num
           linkedin_url: lead.linkedin || undefined,
           message_type: "website_visitor",
           template_id: "website_visitor_use_case",
-          known_fields: { first_name: lead.first, title: lead.title },
+          known_fields: {
+            first_name: lead.first,
+            title: lead.title,
+            ...(lead.company ? { company_name: lead.company } : {}),
+          },
           additional_context: { sender_name: "Jacob" },
         }),
       });
@@ -98,7 +103,7 @@ async function main() {
   const leads = JSON.parse(readFileSync(join(ROOT, "test-runs/with-titles-input.json"), "utf8")) as Lead[];
   const core = leads.filter((l) => l.bucket === "core");
   const control = leads.filter((l) => l.bucket === "not_core");
-  process.stdout.write(`${core.length} core leads + ${control.length} Not Core control, all with a title supplied.\n\n`);
+  process.stdout.write(`${core.length} core leads + ${control.length} Not Core control, with title + company supplied — what an identification vendor returns.\n\n`);
 
   let done = 0;
   const results = await mapLimit(leads, 5, async (lead) => {
