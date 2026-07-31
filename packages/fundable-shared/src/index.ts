@@ -59,6 +59,7 @@ export type {
 // Exa — recency + the person index that makes repeat-founder computable.
 export {
   ExaError,
+  answer,
   articleDate,
   exaConfigured,
   findPerson,
@@ -66,6 +67,19 @@ export {
   newExaLedger,
 } from "./exa.js";
 export type { ExaArticle, ExaLedger, ExaPerson, WorkHistoryEntry } from "./exa.js";
+
+// ICP classification — two-tier, ported from fundable-scripts.
+export {
+  EMAIL_ONLY_PROMPT,
+  FREEMAIL,
+  ICPS,
+  ICP_HUBSPOT_LABEL,
+  TITLED_PROMPT,
+  classifyIcp,
+  companyResearchQuery,
+  isFreemail,
+} from "./icp.js";
+export type { ClassifyInput, Icp, IcpPath, IcpResult } from "./icp.js";
 
 // OpenRouter.
 export { EMPTY_USAGE, MODEL_PLAN, MODEL_WRITE, complete, parseJson, stream } from "./openrouter.js";

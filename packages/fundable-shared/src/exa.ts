@@ -287,6 +287,55 @@ export async function findRecentNews(
   return { articles, warnings };
 }
 
+// ---------------------------------------------------------------------------
+// Answer (research, not retrieval)
+// ---------------------------------------------------------------------------
+
+const EXA_ANSWER_URL = "https://api.exa.ai/answer";
+
+/**
+ * Exa's /answer endpoint: a synthesised answer with citations rather than a
+ * result list. Used by the email-only ICP path, where all we have is a domain
+ * and the question is "what does this company do and who does it sell to".
+ *
+ * Measured at $0.005 per call — cheaper than a neural search.
+ */
+export async function answer(
+  query: string,
+  ledger?: ExaLedger
+): Promise<{ text: string; citations: { url: string; title?: string }[] }> {
+  const res = await fetch(EXA_ANSWER_URL, {
+    method: "POST",
+    headers: { "x-api-key": requireEnv("EXA_API_KEY"), "Content-Type": "application/json" },
+    body: JSON.stringify({ query }),
+    cache: "no-store",
+  });
+
+  const json = (await res.json().catch(() => ({}))) as {
+    answer?: string;
+    citations?: { url?: string; title?: string }[];
+    error?: string;
+    tag?: string;
+    costDollars?: { total?: number };
+  };
+
+  if (!res.ok || json.error) {
+    throw new ExaError(json.error ?? `Exa answer ${res.status}`, res.status, json.tag);
+  }
+
+  if (ledger) {
+    ledger.usd += json.costDollars?.total ?? 0;
+    ledger.calls += 1;
+  }
+
+  return {
+    text: json.answer ?? "",
+    citations: (json.citations ?? [])
+      .filter((c): c is { url: string; title?: string } => typeof c.url === "string")
+      .map((c) => ({ url: c.url, ...(c.title ? { title: c.title } : {}) })),
+  };
+}
+
 /** Day-precision date for a citable fact, or null. */
 export function articleDate(value: string | null): string | null {
   if (!value) return null;
