@@ -29,7 +29,13 @@ import {
   startResearch,
   CLASSIFIER_PROMPT_VERSION,
 } from "../../../../lib/v2/classify";
-import { composeFromTemplate, composeNotCore, validateEmailBody, type ComposeContext } from "../../../../lib/v2/compose";
+import {
+  composeFromTemplate,
+  composeNotCore,
+  validateEmailBody,
+  validateTemplateSource,
+  type ComposeContext,
+} from "../../../../lib/v2/compose";
 import {
   MESSAGE_TYPES,
   REGISTRY_VERSIONS,
@@ -79,7 +85,13 @@ type RequestBody = {
 };
 
 /** Per-leg upstream timings, reported on every response as X-Stage-Ms. */
-type Trace = { identity: number; research: number; model: number };
+type Trace = {
+  identity: number;
+  research: number;
+  model: number;
+  /** Which body the caller actually received — see X-Body-Source. */
+  bodySource: "caller_template" | "catalog_template" | "generic_fallback" | "none";
+};
 
 /** Fundable's own TTL for person records elsewhere in this codebase. */
 const PERSON_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -109,13 +121,17 @@ async function personCached(
 
 export async function POST(req: Request): Promise<Response> {
   const started = Date.now();
-  const trace: Trace = { identity: 0, research: 0, model: 0 };
+  const trace: Trace = { identity: 0, research: 0, model: 0, bodySource: "none" };
   const res = await handle(req, trace);
   res.headers.set("X-Handler-Ms", String(Date.now() - started));
   res.headers.set(
     "X-Stage-Ms",
     `identity=${trace.identity},research=${trace.research},model=${trace.model}`
   );
+  // A Not Core lead gets the approved generic body even when the caller supplied
+  // their own template — correct per spec, but invisible from the response body,
+  // which is exactly how someone ends up believing their copy went out.
+  res.headers.set("X-Body-Source", trace.bodySource);
   return res;
 }
 
@@ -165,13 +181,25 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
     );
   }
 
+  if (hasRawTemplate) {
+    const structural = validateTemplateSource((body.email_template as string).trim());
+    if (structural.length) {
+      return err(422, "TEMPLATE_VALIDATION_FAILED", "email_template failed validation.", structural);
+    }
+  }
+
   // ---- idempotency (API-005) ------------------------------------------------
   const storage = getStorage();
   const idemKey = req.headers.get("idempotency-key")?.trim();
   if (idemKey) {
-    const cached = await storage.cacheGet(`idem:${idemKey}`, "fundable");
+    const cached = (await storage.cacheGet(`idem:${idemKey}`, "fundable")) as Record<string, unknown> | null;
     if (cached) {
-      return Response.json(cached, { headers: { ...versionHeaders(), "X-Idempotent-Replay": "true" } });
+      const canonical = {
+        icp: cached.icp,
+        icp_use_cases: cached.icp_use_cases,
+        email_body: cached.email_body,
+      };
+      return Response.json(canonical, { headers: { ...versionHeaders(), "X-Idempotent-Replay": "true" } });
     }
   }
 
@@ -268,10 +296,12 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
       const { body: b, issues } = composeNotCore({ messageType, ctx });
       if (issues.length) return err(502, "OUTPUT_VALIDATION_FAILED", "Generic fallback failed validation.", issues);
       emailBody = b;
+      trace.bodySource = "generic_fallback";
     } else if (template) {
       const { body: b, issues } = composeFromTemplate({ template, useCases, ctx });
       if (issues.length) return err(502, "OUTPUT_VALIDATION_FAILED", "Composed body failed validation.", issues);
       emailBody = b;
+      trace.bodySource = "catalog_template";
     } else {
       // Raw email_template: same variable/claim/privacy policies as catalog copy.
       const raw = (body.email_template as string).trim();
@@ -316,6 +346,7 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
         return err(422, "UNSUPPORTED_CLAIM", "email_template produced claims outside the approved set.", verdicts);
       }
       emailBody = b;
+      trace.bodySource = "caller_template";
     }
 
     const finalIssues = validateEmailBody(emailBody);
