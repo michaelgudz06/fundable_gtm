@@ -102,9 +102,25 @@ export const ICP_HUBSPOT_LABEL: Record<Icp, string> = {
  * outright and so does this.
  */
 export const FREEMAIL = new Set([
-  "gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "icloud.com", "aol.com",
-  "proton.me", "protonmail.com", "live.com", "msn.com", "me.com", "yandex.com",
-  "gmx.com", "mail.com",
+  // Webmail
+  "gmail.com", "googlemail.com", "yahoo.com", "ymail.com", "rocketmail.com",
+  "outlook.com", "hotmail.com", "live.com", "msn.com", "icloud.com", "me.com",
+  "mac.com", "aol.com", "aim.com", "proton.me", "protonmail.com", "pm.me",
+  "yandex.com", "gmx.com", "gmx.net", "gmx.de", "mail.com", "zoho.com",
+  "fastmail.com", "hushmail.com", "tutanota.com", "juno.com", "netzero.net",
+  // ISP mailboxes. These look corporate to a naive check — the real list had
+  // four of them — and treating one as an employer makes the pipeline research
+  // the ISP and discard the employer the caller actually supplied.
+  "comcast.net", "verizon.net", "att.net", "sbcglobal.net", "bellsouth.net",
+  "cox.net", "charter.net", "centurytel.net", "centurylink.net", "optonline.net",
+  "snet.net", "earthlink.net", "roadrunner.com", "rr.com", "frontier.com",
+  "windstream.net", "btinternet.com", "sky.com", "virginmedia.com", "shaw.ca",
+  "telus.net", "sympatico.ca", "rogers.com", "t-online.de", "web.de",
+  "orange.fr", "free.fr", "wanadoo.fr", "laposte.net", "libero.it", "tiscali.it",
+  // Regional webmail
+  "yahoo.co.uk", "yahoo.ca", "yahoo.com.au", "yahoo.co.in", "hotmail.co.uk",
+  "live.co.uk", "naver.com", "qq.com", "163.com", "126.com", "sina.com",
+  "uol.com.br", "bol.com.br", "terra.com",
 ]);
 
 export function isFreemail(domain: string): boolean {
@@ -179,7 +195,15 @@ export function companyResearchQuery(domain: string): string {
  * search query, and a "company name" of two paragraphs is not a company name.
  */
 export function companyResearchQueryByName(name: string): string {
-  const clean = name.replace(/\s+/g, " ").trim().slice(0, 120);
+  // Quotes are stripped, not escaped: the name is delimited by quotes in the
+  // query, so a name containing one would otherwise close the delimiter early
+  // and the remainder would read as part of our question.
+  const clean = name
+    .replace(/[\p{Cc}\p{Cf}]/gu, " ")
+    .replace(/["'`“”‘’]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
   return `What does the company "${clean}" do, and does it primarily sell to startups or venture-backed companies? Is it a small company or a large enterprise? If several companies share this name, describe the most likely one and say that the match is uncertain.`;
 }
 

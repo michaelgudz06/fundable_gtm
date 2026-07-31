@@ -53,11 +53,20 @@ export function articleFor(phrase: string): "a" | "an" {
   return /^[aeiou]/i.test(word) ? "an" : "a";
 }
 
-/** Lowercase for prose WITHOUT destroying acronyms: "Startup GTM" -> "startup GTM". */
+/**
+ * Lowercase for prose WITHOUT destroying anything that carries meaning in its
+ * capitalisation: "Startup GTM" -> "startup GTM", but "Claude/ChatGPT" is left
+ * exactly as written. Only a plain Title-Case word is lowered — an acronym, a
+ * mixed-case brand, or anything with a digit keeps its shape.
+ */
 export function proseCase(name: string): string {
+  // Lowered only if the capital is positional — a leading capital with no other
+  // uppercase after it ("Post-raise" -> "post-raise"). Any interior capital
+  // means the capitalisation is carrying meaning ("GTM", "SaaS", "Claude/ChatGPT",
+  // "B2B") and the word is left exactly as written.
   return name
     .split(" ")
-    .map((w) => (/^[A-Z0-9&]{2,}$/.test(w) ? w : w.toLowerCase()))
+    .map((w) => (/^[A-Z][^A-Z]*$/.test(w) ? w.toLowerCase() : w))
     .join(" ");
 }
 
@@ -84,7 +93,9 @@ function resolveVariables(body: string, ctx: ComposeContext, useCase: UseCase | 
     first_name: ctx.first_name ?? "",
     sender_name: ctx.sender_name ?? "Fundable",
     company_name: ctx.company_name ?? "",
-    company_or_generic: ctx.company_name ?? "your team",
+    // "saw you're at your team" was the old fallback's output. A company slot
+    // with no company has to name something a person can be *at*.
+    company_or_generic: ctx.company_name ?? "your company",
     icp_descriptor: descriptor ?? "team like yours",
     // Article-bearing forms: the template writes "for {{...}}", not "for a {{...}}",
     // so agreement is decided here where the noun is actually known.
@@ -108,12 +119,15 @@ function resolveVariables(body: string, ctx: ComposeContext, useCase: UseCase | 
 
   // Grammar repair for the territory fallback: "the startups" reads fine, but a
   // doubled space or " the the " must not survive. The punctuation collapse is a
-  // second line of defence for caller-supplied templates, which we do not control.
+  // second line of defence for caller-supplied templates, which we do not control
+  // — but an ellipsis is deliberate punctuation, not a defect, so a run of three
+  // is left alone. Rewriting "Quick one... what are you tracking?" into
+  // "Quick one. what are you tracking?" corrupts the operator's own words.
   out = out
     .replace(/[ \t]{2,}/g, " ")
     .replace(/ ,/g, ",")
     .replace(/\bthe the\b/g, "the")
-    .replace(/([.!?])[.]+(?=\s|$)/g, "$1");
+    .replace(/(?<![.])([.!?])\.(?![.])(?=\s|$)/g, "$1");
   return out;
 }
 
@@ -146,11 +160,22 @@ export function validateEmailBody(body: string): ComposeIssue[] {
   // Both of the following shipped in a real generated body before they were
   // caught by eye. Machine-composed sentences fail at the seams — where a
   // template's fixed words meet a registry value — so the seams get checked.
-  const doubled = body.match(/[.!?][.]+/);
+  // An ellipsis is exempt: three dots are a punctuation mark, two are a defect.
+  const doubled = body.match(/(?<![.])[.!?]\.(?![.])/);
   if (doubled) issues.push({ rule: "double-punctuation", detail: doubled[0] });
 
-  for (const m of body.matchAll(/\b(a|an)\s+([A-Za-z][\w&-]*)/g)) {
+  // Article agreement, checked only where pronunciation is unambiguous.
+  //
+  // The composer conjugates registry descriptors, which are clean; this rule
+  // exists for copy we did not compose. It therefore judges ONLY plain words —
+  // all-lowercase, or a single Title-case word — and skips acronyms, mixed-case
+  // brands, digits, and anything hyphenated or ampersanded, where letter-name
+  // vs word pronunciation is genuinely ambiguous ("an R&D team", "a SaaS tool",
+  // "an 8-figure round" are all correct and must not be rejected). A validator
+  // that blocks good copy costs a send; missing an exotic case costs a typo.
+  for (const m of body.matchAll(/\b(a|an)\s+([A-Za-z]+)\b/gi)) {
     const [, article = "", word = ""] = m;
+    if (!/^[a-z]+$/.test(word) && !/^[A-Z][a-z]+$/.test(word)) continue;
     if (articleFor(word) !== article.toLowerCase()) {
       issues.push({ rule: "article-disagreement", detail: `${article} ${word}` });
       break;
@@ -164,6 +189,29 @@ export function validateEmailBody(body: string): ComposeIssue[] {
 // Composition
 // ---------------------------------------------------------------------------
 
+/**
+ * The two variables with no grammatical fallback available.
+ *
+ * Every other variable degrades into a sentence that still reads ({{greeting}}
+ * -> "Hi there,", {{company_or_generic}} -> "your company"). A bare name has no
+ * such form: "Thanks {{first_name}}." with no name resolves to "Thanks ." — a
+ * visibly broken merge field, the classic sign of a machine sending mail. The
+ * catalog never uses these bare; a caller's template might, so it is told.
+ */
+const NO_FALLBACK_AVAILABLE = [
+  ["first_name", "use {{greeting}}, which falls back to \"Hi there,\""],
+  ["company_name", "use {{company_or_generic}}, which falls back to \"your company\""],
+] as const;
+
+function missingContext(templateBody: string, ctx: ComposeContext): ComposeIssue[] {
+  return NO_FALLBACK_AVAILABLE.filter(([key]) => templateBody.includes(`{{${key}}}`) && !ctx[key]).map(
+    ([key, advice]) => ({
+      rule: "missing-context",
+      detail: `{{${key}}} has no value and no grammatical fallback — ${advice}, or supply known_fields.${key}`,
+    })
+  );
+}
+
 export function composeFromTemplate(input: {
   template: TemplateEntry;
   useCases: UseCase[];
@@ -171,7 +219,10 @@ export function composeFromTemplate(input: {
 }): { body: string; issues: ComposeIssue[] } {
   const primary = input.useCases[0] ?? null;
   const body = resolveVariables(input.template.body, input.ctx, primary).trim();
-  return { body, issues: validateEmailBody(body) };
+  return {
+    body,
+    issues: [...missingContext(input.template.body, input.ctx), ...validateEmailBody(body)],
+  };
 }
 
 export function composeNotCore(input: {

@@ -1,5 +1,5 @@
 {
-  "version": "2.1.0",
+  "version": "2.2.0",
   "//": "Canonical ICP registry per SPEC-v2 §3. THE prompt is BUILT from this file (CLS-006: prompts may not embed alternative definitions). Numbering is intentional: there is no #3. #19 Investor SUPERSEDES the v1 rule that VCs are Not Core. Labels are output as 'ICP #<n>: <name>'.",
   "//email_descriptor": "2.1.0: `name` is a TAXONOMY label and must never be dropped into a sentence — 'for a startup gtm team' shipped to a real lead before this field existed. `email_descriptor` is the prose form: a bare noun phrase with no article (the composer supplies a/an) and correct acronym casing. Change this, not the label, when the copy reads wrong.",
   "cross_cutting_rules": [
@@ -28,7 +28,7 @@
     { "number": 15, "name": "Startup Accounting", "email_descriptor": "startup accounting team", "roles": "AE/BDR/SDR/Growth", "company": "startup-focused accounting product or service (Pilot, Bench)", "evidence_gate": "startup_customers_required" },
     { "number": 16, "name": "Other Startup Agency", "email_descriptor": "startup agency", "roles": "Sales/BD", "company": "any other agency primarily serving startups (fractional CFO, growth, design, ops)", "evidence_gate": "startup_customers_required" },
     { "number": 17, "name": "Startup Legal Services", "email_descriptor": "startup legal team", "roles": "AE/BDR/Growth/Founding team", "company": "AI-native startup legal services; excludes litigation-only, BigLaw, government, F500/healthcare/finance enterprise focus", "evidence_gate": "startup_focus" },
-    { "number": 18, "name": "Startup Marketing & PR Agency", "email_descriptor": "startup marketing team", "roles": "Sales/BD/Growth/Founder/Partner", "company": "AI-native marketing/growth/SEO/content/PR agency for venture-backed startups; excludes enterprise/F500 agencies", "evidence_gate": "startup_focus" },
+    { "number": 18, "name": "Startup Marketing & PR Agency", "email_descriptor": "startup marketing agency", "roles": "Sales/BD/Growth/Founder/Partner", "company": "AI-native marketing/growth/SEO/content/PR agency for venture-backed startups; excludes enterprise/F500 agencies", "evidence_gate": "startup_focus" },
     { "number": 19, "name": "Investor", "email_descriptor": "investing team", "roles": "Partner/Principal/Associate/Analyst/GP/MD/Scout", "company": "startup VC fund, angel network, or family office. NOTE: this supersedes the v1 rule that investors are Not Core. VC NEWSLETTER OPERATORS and public-market investors remain excluded.", "evidence_gate": "none" },
     { "number": 20, "name": "Startup GTM", "email_descriptor": "startup GTM team", "roles": "Sales/AE/BDR/SDR/Growth/Marketing/BD", "company": "venture-style tech startup", "evidence_gate": "none", "catch_all": true, "note": "ONLY when no specific ICP fits. A GTM leader at a startup HR platform is #11, not #20." }
   ],

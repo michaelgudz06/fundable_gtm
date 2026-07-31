@@ -12,6 +12,7 @@
 import {
   FundableError,
   newExaLedger,
+  isFreemail,
   newLedger,
   normalizeDomain,
   normalizeLinkedIn,
@@ -199,8 +200,9 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
     // person. Neither needs the other's answer when the caller already told us
     // the title — and the identity leg is the slow one (measured at 19s cold,
     // 2.6s warm against Fundable /people), so the two are started together.
+    let researchDomain = companyDomain;
     const preTarget = title
-      ? researchTarget({ emailDomain, companyDomain, company })
+      ? researchTarget({ emailDomain, companyDomain: researchDomain, company })
       : null; // no title yet: the freemail gate may make research unnecessary
     const researchTask = preTarget ? startResearch(preTarget, exa) : undefined;
 
@@ -212,16 +214,25 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
         title = title ?? person.title ?? undefined;
         company = company ?? person.current_company?.name ?? undefined;
         // ID-004: fail closed on a material email-domain vs employer conflict.
+        //
+        // "Material" excludes a personal address. gmail.com is not a competing
+        // employer claim — it is the absence of one — so treating the mismatch
+        // as a conflict would 409 every consumer-mailbox lead whose profile
+        // resolves, which is precisely the population the research fallback
+        // exists to serve. Their employer is taken from the profile instead.
         const employerDomain = person.current_company?.domain
           ? normalizeDomain(person.current_company.domain).domain
           : null;
-        if (employerDomain && employerDomain !== emailDomain) {
+        if (employerDomain && !isFreemail(emailDomain) && employerDomain !== emailDomain) {
           return err(
             409,
             "IDENTITY_CONFLICT",
             `Email domain "${emailDomain}" conflicts with the LinkedIn profile's current employer "${employerDomain}". Failing closed rather than personalizing for the wrong identity.`
           );
         }
+        // For a personal address the profile's employer is the best evidence we
+        // have — better than the caller's assertion, and far better than a name.
+        if (employerDomain && isFreemail(emailDomain)) researchDomain = employerDomain;
       }
     }
 
@@ -230,7 +241,10 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
     // It never overrides a corporate email domain and never participates in the
     // identity check; it exists so a lead with a personal address is still
     // researchable instead of failing closed for want of a lookup.
-    const cls = await classifyV2({ email, title, company, companyDomain, researchTask }, exa);
+    const cls = await classifyV2(
+      { email, title, company, companyDomain: researchDomain, researchTask },
+      exa
+    );
     trace.research = cls.timings.research;
     trace.model = cls.timings.model;
     const entry = cls.icpNumber !== null ? icpByNumber(cls.icpNumber) : null;
