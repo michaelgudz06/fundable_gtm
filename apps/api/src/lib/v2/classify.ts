@@ -34,6 +34,8 @@ export type V2Classification = {
   path: "titled" | "email_only" | "gated";
   usage: Usage[];
   warnings: string[];
+  /** Milliseconds per upstream leg, so a slow request can be attributed. */
+  timings: { research: number; model: number };
 };
 
 /** Built once from the registry. Exported for the version trace and tests. */
@@ -147,6 +149,7 @@ export async function classifyV2(
 ): Promise<V2Classification> {
   const usage: Usage[] = [];
   const warnings: string[] = [];
+  const timings = { research: 0, model: 0 };
   const domain = input.email.slice(input.email.lastIndexOf("@") + 1).toLowerCase();
 
   // ---- deterministic pre-gates (CLS-003, fail closed) -----------------------
@@ -158,6 +161,7 @@ export async function classifyV2(
       path: "gated",
       usage,
       warnings: ["Freemail address without a title fails closed to Not Core ICP."],
+      timings,
     };
   }
 
@@ -170,6 +174,7 @@ export async function classifyV2(
     company: input.company,
   });
   if (!research && target) {
+    const t0 = Date.now();
     try {
       research = (await answer(target.query, exaLedger)).text;
       if (target.kind === "name") {
@@ -180,6 +185,8 @@ export async function classifyV2(
     } catch (err) {
       researchFailed = true;
       warnings.push(`Company research unavailable: ${(err as Error).message.slice(0, 120)}`);
+    } finally {
+      timings.research = Date.now() - t0;
     }
   }
 
@@ -199,6 +206,7 @@ export async function classifyV2(
       path: "gated",
       usage,
       warnings,
+      timings,
     };
   }
 
@@ -216,10 +224,12 @@ export async function classifyV2(
     .filter(Boolean)
     .join("\n");
 
+  const tModel = Date.now();
   const verdict = await runModel(lead, usage);
+  timings.model = Date.now() - tModel;
   if (!verdict) {
     warnings.push("Classifier output was malformed twice; failing closed to Not Core ICP.");
-    return { icpNumber: null, label: icpLabel(null), reasoning: "classifier failure", path: input.title ? "titled" : "email_only", usage, warnings };
+    return { icpNumber: null, label: icpLabel(null), reasoning: "classifier failure", path: input.title ? "titled" : "email_only", usage, warnings, timings };
   }
 
   if (!input.title && verdict.icpNumber !== null) {
@@ -233,5 +243,6 @@ export async function classifyV2(
     path: input.title ? "titled" : "email_only",
     usage,
     warnings,
+    timings,
   };
 }

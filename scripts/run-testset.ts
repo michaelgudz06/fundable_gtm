@@ -221,6 +221,20 @@ function report(results: Outcome[], meta: { base: string; variant: string; start
   }
   lines.push("");
 
+  const staged = results
+    .map((r) => ({ id: r.row.id, ms: r.ms, stages: r.headers["x-stage-ms"] ?? "" }))
+    .filter((s) => s.stages)
+    .sort((a, b) => b.ms - a.ms)
+    .slice(0, 8);
+  if (staged.length) {
+    lines.push("## Where the slowest requests spent their time");
+    lines.push("");
+    lines.push("| Row | total ms | stages (ms) |");
+    lines.push("|---|---|---|");
+    for (const s of staged) lines.push(`| ${s.id} | ${s.ms} | ${s.stages} |`);
+    lines.push("");
+  }
+
   lines.push("## Every row");
   lines.push("");
   lines.push("| # | Person | Title @ Company | Email | List says | API says | Verdict | ms |");
