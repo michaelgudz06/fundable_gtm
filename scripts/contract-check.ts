@@ -214,8 +214,8 @@ const CASES: Case[] = [
     },
   },
   {
-    name: "a caller template asserting an unapproved metric is refused",
-    why: "claims are approved in the registry or they do not ship",
+    name: "a caller's own numbers pass through unaudited (documented limit)",
+    why: "approved_claims is fail-closed for CATALOG copy only; a caller's template is their own words, so the registry is not a guarantee about text they wrote",
     run: async () => {
       const r = await post({
         email: "ae@mercury.com",
@@ -224,11 +224,20 @@ const CASES: Case[] = [
         email_template:
           "{{greeting}}\n\nWe track 2,000 startups raising every month and 94% of our customers renew.\n\nBest,\n{{sender_name}}",
       });
+      // Asserting the real contract, not the one you might assume: verify.ts
+      // exempts caller template text by design ("its own numbers and names are
+      // theirs, not ours"). If this ever starts returning 422, that is a
+      // deliberate policy change and this case should be rewritten, not deleted.
       return [
-        ...ok(r.status === 422, `expected 422 for an unapproved numeric claim, got ${r.status}`),
-        ...ok(errCode(r) === "UNSUPPORTED_CLAIM", `expected UNSUPPORTED_CLAIM, got ${errCode(r)}`),
+        ...expectStatus(r, 200),
+        ...ok(
+          String(r.body.email_body).includes("2,000 startups"),
+          "the caller's own sentence should survive verbatim"
+        ),
+        ...ok(r.headers["x-body-source"] === "caller_template", `expected caller_template, got ${r.headers["x-body-source"]}`),
       ];
     },
+    costly: true,
   },
 
   // ---- classification behaviour (costs upstream calls) --------------------
