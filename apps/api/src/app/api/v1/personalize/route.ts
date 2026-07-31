@@ -96,6 +96,8 @@ type Trace = {
   bodySource: "caller_template" | "catalog_template" | "generic_fallback" | "none";
   /** Whether the label came from the classifier or from the stable cache. */
   classification: "fresh" | "cached" | "none";
+  /** Vote agreement, e.g. "3/3" — surfaced so a caller can gate review on it. */
+  agreement: string;
 };
 
 /** Fundable's own TTL for person records elsewhere in this codebase. */
@@ -155,7 +157,7 @@ async function personCached(
 
 export async function POST(req: Request): Promise<Response> {
   const started = Date.now();
-  const trace: Trace = { identity: 0, research: 0, model: 0, bodySource: "none", classification: "none" };
+  const trace: Trace = { identity: 0, research: 0, model: 0, bodySource: "none", classification: "none", agreement: "" };
   const res = await handle(req, trace);
   res.headers.set("X-Handler-Ms", String(Date.now() - started));
   res.headers.set(
@@ -167,6 +169,7 @@ export async function POST(req: Request): Promise<Response> {
   // which is exactly how someone ends up believing their copy went out.
   res.headers.set("X-Body-Source", trace.bodySource);
   res.headers.set("X-Classification", trace.classification);
+  if (trace.agreement) res.headers.set("X-Classifier-Agreement", trace.agreement);
   return res;
 }
 
@@ -306,7 +309,7 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
     // researchable instead of failing closed for want of a lookup.
     const clsKey = classificationKey({ email, title, company, companyDomain: researchDomain });
     const cachedCls = (await storage.cacheGet(clsKey, "fundable")) as
-      | { icpNumber: number | null; label: string }
+      | { icpNumber: number | null; label: string; agreementTop?: number; agreementTotal?: number }
       | null;
 
     let cls: Awaited<ReturnType<typeof classifyV2>>;
@@ -319,6 +322,7 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
         usage: [],
         warnings: [],
         timings: { research: 0, model: 0 },
+        agreement: { top: cachedCls.agreementTop ?? 0, total: cachedCls.agreementTotal ?? 0 },
       };
       trace.classification = "cached";
     } else {
@@ -326,13 +330,19 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
       await storage.cacheSet(
         clsKey,
         "fundable",
-        { icpNumber: cls.icpNumber, label: cls.label },
+        {
+          icpNumber: cls.icpNumber,
+          label: cls.label,
+          agreementTop: cls.agreement.top,
+          agreementTotal: cls.agreement.total,
+        },
         CLASSIFICATION_TTL_MS
       );
       trace.classification = "fresh";
     }
     trace.research = cls.timings.research;
     trace.model = cls.timings.model;
+    if (cls.agreement.total) trace.agreement = `${cls.agreement.top}/${cls.agreement.total}`;
     const entry = cls.icpNumber !== null ? icpByNumber(cls.icpNumber) : null;
     const useCases = useCasesFor(cls.icpNumber);
 

@@ -36,6 +36,13 @@ export type V2Classification = {
   warnings: string[];
   /** Milliseconds per upstream leg, so a slow request can be attributed. */
   timings: { research: number; model: number };
+  /**
+   * How decisive the vote was: 3/3 means every independent vote agreed, 2/3
+   * means one dissented. A caller routing to human review wants this — it is
+   * the difference between "confident" and "the classifier nearly said
+   * something else about a person you are about to email".
+   */
+  agreement: { top: number; total: number };
 };
 
 /** Built once from the registry. Exported for the version trace and tests. */
@@ -176,7 +183,8 @@ async function oneVote(user: string, usage: Usage[]): Promise<Vote | null> {
 async function runModel(
   user: string,
   usage: Usage[],
-  warnings: string[]
+  warnings: string[],
+  agreement: { top: number; total: number }
 ): Promise<{ icpNumber: number | null; reasoning: string } | null> {
   const settled = await Promise.allSettled(
     Array.from({ length: CLASSIFIER_VOTES }, () => oneVote(user, usage))
@@ -211,6 +219,8 @@ async function runModel(
 
   const ranked = [...tally.values()].sort((a, b) => b.count - a.count);
   const top = ranked[0]!;
+  agreement.top = top.count;
+  agreement.total = votes.length;
 
   if (top.count * 2 <= votes.length) {
     // No majority — every vote disagreed. That is the definition of a lead the
@@ -301,6 +311,7 @@ export async function classifyV2(
   const usage: Usage[] = [];
   const warnings: string[] = [];
   const timings = { research: 0, model: 0 };
+  const agreement = { top: 0, total: 0 };
   const domain = input.email.slice(input.email.lastIndexOf("@") + 1).toLowerCase();
 
   // ---- deterministic pre-gates (CLS-003, fail closed) -----------------------
@@ -313,6 +324,7 @@ export async function classifyV2(
       usage,
       warnings: ["Freemail address without a title fails closed to Not Core ICP."],
       timings,
+      agreement,
     };
   }
 
@@ -377,6 +389,7 @@ export async function classifyV2(
       usage,
       warnings,
       timings,
+      agreement,
     };
   }
 
@@ -417,11 +430,11 @@ export async function classifyV2(
     .join("\n");
 
   const tModel = Date.now();
-  const verdict = await runModel(lead, usage, warnings);
+  const verdict = await runModel(lead, usage, warnings, agreement);
   timings.model = Date.now() - tModel;
   if (!verdict) {
     warnings.push("Classifier output was malformed twice; failing closed to Not Core ICP.");
-    return { icpNumber: null, label: icpLabel(null), reasoning: "classifier failure", path: input.title ? "titled" : "email_only", usage, warnings, timings };
+    return { icpNumber: null, label: icpLabel(null), reasoning: "classifier failure", path: input.title ? "titled" : "email_only", usage, warnings, timings, agreement };
   }
 
   if (!input.title && verdict.icpNumber !== null) {
@@ -436,5 +449,6 @@ export async function classifyV2(
     usage,
     warnings,
     timings,
+    agreement,
   };
 }
