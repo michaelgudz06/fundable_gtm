@@ -77,14 +77,21 @@ type RequestBody = {
  * real 29-lead list the two differed by more than a minute — so the split is
  * reported on every response instead of being guessed at from the outside.
  */
+type Trace = { identity: number; research: number; model: number };
+
 export async function POST(req: Request): Promise<Response> {
   const started = Date.now();
-  const res = await handle(req);
+  const trace: Trace = { identity: 0, research: 0, model: 0 };
+  const res = await handle(req, trace);
   res.headers.set("X-Handler-Ms", String(Date.now() - started));
+  res.headers.set(
+    "X-Stage-Ms",
+    `identity=${trace.identity},research=${trace.research},model=${trace.model}`
+  );
   return res;
 }
 
-async function handle(req: Request): Promise<Response> {
+async function handle(req: Request, trace: Trace): Promise<Response> {
   const auth = checkAuth(req);
   if (!auth.ok) return err(auth.status, auth.status === 401 ? "UNAUTHORIZED" : "NOT_CONFIGURED", auth.message);
   const rate = checkRateLimit(auth.keyHash);
@@ -158,7 +165,9 @@ async function handle(req: Request): Promise<Response> {
     const emailDomain = normalizeDomain(email).domain;
 
     if (linkedin) {
+      const tIdentity = Date.now();
       const { person } = await personByLinkedIn(linkedin, fundable);
+      trace.identity = Date.now() - tIdentity;
       if (person) {
         title = title ?? person.title ?? undefined;
         company = company ?? person.current_company?.name ?? undefined;
@@ -186,6 +195,8 @@ async function handle(req: Request): Promise<Response> {
         ? normalizeDomain(kf.company_domain).domain
         : undefined;
     const cls = await classifyV2({ email, title, company, companyDomain }, exa);
+    trace.research = cls.timings.research;
+    trace.model = cls.timings.model;
     const entry = cls.icpNumber !== null ? icpByNumber(cls.icpNumber) : null;
     const useCases = useCasesFor(cls.icpNumber);
 
