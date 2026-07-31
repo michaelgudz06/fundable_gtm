@@ -13,8 +13,11 @@ import {
   FundableError,
   newExaLedger,
   isFreemail,
+  MODEL_PLAN,
   newLedger,
   normalizeDomain,
+  normalizeEmail,
+  startBudget,
   normalizeLinkedIn,
   personByLinkedIn,
   verifyCopy,
@@ -53,14 +56,18 @@ export const runtime = "nodejs";
 
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 
-function versionHeaders(): Record<string, string> {
+function versionHeaders(servedModel?: string): Record<string, string> {
   return {
     "X-Icp-Registry-Version": REGISTRY_VERSIONS.icp_registry,
     "X-Use-Case-Catalog-Version": REGISTRY_VERSIONS.use_case_catalog,
     "X-Template-Catalog-Version": REGISTRY_VERSIONS.template_catalog,
     "X-Approved-Claims-Version": REGISTRY_VERSIONS.approved_claims,
     "X-Prompt-Version": CLASSIFIER_PROMPT_VERSION,
-    "X-Model": "deepseek/deepseek-v4-flash",
+    // The model we ASKED for. `X-Model-Served` reports what came back — they
+    // differ when a provider routes elsewhere, and a trace that cannot tell them
+    // apart attributes a label to the wrong model.
+    "X-Model": MODEL_PLAN,
+    ...(servedModel ? { "X-Model-Served": servedModel } : {}),
   };
 }
 
@@ -98,7 +105,33 @@ type Trace = {
   classification: "fresh" | "cached" | "none";
   /** Vote agreement, e.g. "3/3" — surfaced so a caller can gate review on it. */
   agreement: string;
+  /** The model the provider actually served, not the one we asked for. */
+  model: string;
 };
+
+/**
+ * Every version that can change an answer, in one string.
+ *
+ * A key carrying only the ICP registry left four other levers unversioned: swap
+ * the model, reword the research question, or edit the use-case, template or
+ * claims catalogs, and 30 days of cached verdicts keep being served as if
+ * nothing moved.
+ */
+function idempotencyKey(callerKey: string): string {
+  // Versioned so a registry bump mid-flight cannot replay a body composed under
+  // the old catalog while the response advertises the new versions.
+  return `idem:${registryFingerprint()}:${callerKey}`;
+}
+
+function registryFingerprint(): string {
+  return [
+    REGISTRY_VERSIONS.icp_registry,
+    REGISTRY_VERSIONS.use_case_catalog,
+    REGISTRY_VERSIONS.template_catalog,
+    REGISTRY_VERSIONS.approved_claims,
+    MODEL_PLAN,
+  ].join("|");
+}
 
 /** Fundable's own TTL for person records elsewhere in this codebase. */
 const PERSON_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -123,13 +156,13 @@ function classificationKey(input: {
   companyDomain?: string | undefined;
 }): string {
   const material = [
-    input.email.trim().toLowerCase(),
+    normalizeEmail(input.email),
     (input.title ?? "").trim().toLowerCase(),
     (input.company ?? "").trim().toLowerCase(),
     (input.companyDomain ?? "").trim().toLowerCase(),
   ].join("|");
   const digest = createHash("sha256").update(material).digest("hex").slice(0, 32);
-  return `cls:${REGISTRY_VERSIONS.icp_registry}:${CLASSIFIER_DECISION_VERSION}:${digest}`;
+  return `cls:${registryFingerprint()}:${CLASSIFIER_DECISION_VERSION}:${digest}`;
 }
 
 /**
@@ -157,7 +190,7 @@ async function personCached(
 
 export async function POST(req: Request): Promise<Response> {
   const started = Date.now();
-  const trace: Trace = { identity: 0, research: 0, model: 0, bodySource: "none", classification: "none", agreement: "" };
+  const trace: Trace = { identity: 0, research: 0, model: 0, bodySource: "none", classification: "none", agreement: "", model: "" };
   const res = await handle(req, trace);
   res.headers.set("X-Handler-Ms", String(Date.now() - started));
   res.headers.set(
@@ -169,6 +202,7 @@ export async function POST(req: Request): Promise<Response> {
   // which is exactly how someone ends up believing their copy went out.
   res.headers.set("X-Body-Source", trace.bodySource);
   res.headers.set("X-Classification", trace.classification);
+  if (trace.model) res.headers.set("X-Model-Served", trace.model);
   if (trace.agreement) res.headers.set("X-Classifier-Agreement", trace.agreement);
   return res;
 }
@@ -230,7 +264,7 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
   const storage = getStorage();
   const idemKey = req.headers.get("idempotency-key")?.trim();
   if (idemKey) {
-    const cached = (await storage.cacheGet(`idem:${idemKey}`, "fundable")) as Record<string, unknown> | null;
+    const cached = (await storage.cacheGet(idempotencyKey(idemKey), "fundable")) as Record<string, unknown> | null;
     if (cached) {
       const canonical = {
         icp: cached.icp,
@@ -241,8 +275,11 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
     }
   }
 
-  const fundable = newLedger();
-  const exa = newExaLedger();
+  // One budget for the whole request; every upstream leg is clamped to what
+  // remains of it, which is what makes p95 <= 15s structural rather than lucky.
+  const deadlineAt = startBudget();
+  const fundable = newLedger(deadlineAt);
+  const exa = newExaLedger(deadlineAt);
   const kf = body.known_fields ?? {};
   const ctxIn = body.additional_context ?? {};
   const linkedin =
@@ -326,7 +363,7 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
       };
       trace.classification = "cached";
     } else {
-      cls = await classifyV2({ email, title, company, companyDomain: researchDomain, researchTask }, exa);
+      cls = await classifyV2({ email, title, company, companyDomain: researchDomain, researchTask, deadlineAt }, exa);
       await storage.cacheSet(
         clsKey,
         "fundable",
@@ -343,6 +380,7 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
     trace.research = cls.timings.research;
     trace.model = cls.timings.model;
     if (cls.agreement.total) trace.agreement = `${cls.agreement.top}/${cls.agreement.total}`;
+    if (cls.model) trace.model = cls.model;
     const entry = cls.icpNumber !== null ? icpByNumber(cls.icpNumber) : null;
     const useCases = useCasesFor(cls.icpNumber);
 
@@ -430,7 +468,7 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
     };
 
     if (idemKey) {
-      await storage.cacheSet(`idem:${idemKey}`, "fundable", success, IDEMPOTENCY_TTL_MS);
+      await storage.cacheSet(idempotencyKey(idemKey), "fundable", success, IDEMPOTENCY_TTL_MS);
     }
 
     return Response.json(success, { headers: versionHeaders() });

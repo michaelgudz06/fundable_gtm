@@ -6,6 +6,7 @@
  * usage, because the personalize response has to return a `usage` block.
  */
 
+import { fetchWithDeadline, LEG_TIMEOUT_MS } from "./deadline.js";
 import { requireEnv } from "./env.js";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -57,6 +58,8 @@ export type CompleteOpts = {
    * call (~$0.002 on the writer) instead of the user's time.
    */
   hedgeAfterMs?: number;
+  /** Whole-request budget; the leg cap is clamped to whatever remains of it. */
+  deadlineAt?: number;
 };
 
 const EMPTY_USAGE: Usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
@@ -113,12 +116,18 @@ async function completeOnce(
   opts: CompleteOpts,
   signal: AbortSignal | undefined
 ): Promise<CompleteResult> {
-  const res = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    headers: headers(),
-    body: body(messages, opts, false),
-    ...(signal ? { signal } : {}),
-  });
+  const res = await fetchWithDeadline(
+    OPENROUTER_URL,
+    { method: "POST", headers: headers(), body: body(messages, opts, false) },
+    {
+      leg: "openrouter",
+      cap: LEG_TIMEOUT_MS.model,
+      ...(opts.deadlineAt !== undefined ? { budget: { deadlineAt: opts.deadlineAt } } : {}),
+      // The hedge's abort of its losing half must still work; fetchWithDeadline
+      // composes the two signals rather than replacing the caller's.
+      ...(signal ? { signal } : {}),
+    }
+  );
   const json = (await res.json()) as {
     error?: { message?: string };
     choices?: { message?: { content?: string } }[];

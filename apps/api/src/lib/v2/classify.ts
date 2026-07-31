@@ -18,6 +18,7 @@ import {
   companyResearchQuery,
   companyResearchQueryByName,
   isFreemail,
+  RESEARCH_QUERY_VERSION,
   MODEL_PLAN,
   complete,
   parseJson,
@@ -102,7 +103,7 @@ export const CLASSIFIER_PROMPT_VERSION = `v2-registry-${REGISTRY_VERSIONS.icp_re
  * serving verdicts reached under the old procedure. Anything that alters the
  * decision belongs in this string.
  */
-export const CLASSIFIER_DECISION_VERSION = `${CLASSIFIER_PROMPT_VERSION}+votes${CLASSIFIER_VOTES}`;
+export const CLASSIFIER_DECISION_VERSION = `${CLASSIFIER_PROMPT_VERSION}+votes${CLASSIFIER_VOTES}+research${RESEARCH_QUERY_VERSION}`;
 
 /**
  * Caller-supplied values are single-line facts, and the lead block is a
@@ -149,11 +150,26 @@ export function asCompanyName(raw: string): string | null {
   return v;
 }
 
-type Vote = { icpNumber: number | null; reasoning: string };
+type Vote = { icpNumber: number | null; reasoning: string; model: string };
+
+/**
+ * Raised when a HEALTHY provider returns something we cannot parse. Distinct
+ * from a transport failure on purpose: the spec's canonical fixture says
+ * malformed classifier JSON gets one retry and then FALLS BACK, while a dead
+ * dependency must reach the caller as a 502. Both used to land in the same
+ * `catch`, so malformed output was being reported as an outage.
+ */
+class MalformedOutputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MalformedOutputError";
+  }
+}
 
 /** One independent opinion, with the malformed-output retry (API-007). */
-async function oneVote(user: string, usage: Usage[]): Promise<Vote | null> {
+async function oneVote(user: string, usage: Usage[], deadlineAt?: number): Promise<Vote | null> {
   let lastTransportError: Error | null = null;
+  let malformed = false;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await complete(
@@ -164,22 +180,37 @@ async function oneVote(user: string, usage: Usage[]): Promise<Vote | null> {
         // No hedge here, deliberately. The hedge races a second request and
         // takes whichever replica answers first — which is a second source of
         // disagreement on top of the one the vote exists to resolve.
-        { model: MODEL_PLAN, maxTokens: 250, temperature: 0 }
+        {
+          model: MODEL_PLAN,
+          maxTokens: 250,
+          temperature: 0,
+          ...(deadlineAt !== undefined ? { deadlineAt } : {}),
+        }
       );
       usage.push(res.usage);
-      const parsed = parseJson<{ icp_number?: unknown; reasoning?: unknown }>(res.text);
+      let parsed: { icp_number?: unknown; reasoning?: unknown };
+      try {
+        parsed = parseJson<{ icp_number?: unknown; reasoning?: unknown }>(res.text);
+      } catch {
+        // The provider answered; we could not read it. Retry once, then fall back.
+        malformed = true;
+        lastTransportError = null;
+        continue;
+      }
       const n = parsed.icp_number;
-      if (n === null) return { icpNumber: null, reasoning: String(parsed.reasoning ?? "") };
+      if (n === null) return { icpNumber: null, reasoning: String(parsed.reasoning ?? ""), model: res.model };
       if (typeof n === "number" && icpByNumber(n)) {
-        return { icpNumber: n, reasoning: String(parsed.reasoning ?? "") };
+        return { icpNumber: n, reasoning: String(parsed.reasoning ?? ""), model: res.model };
       }
       // Unknown number: treat as malformed and retry once.
+      malformed = true;
       lastTransportError = null;
     } catch (err) {
       lastTransportError = err as Error;
     }
   }
   if (lastTransportError) throw lastTransportError;
+  if (malformed) throw new MalformedOutputError("classifier returned unparseable output twice");
   return null;
 }
 
@@ -187,14 +218,15 @@ async function runModel(
   user: string,
   usage: Usage[],
   warnings: string[],
-  agreement: { top: number; total: number }
+  agreement: { top: number; total: number },
+  deadlineAt?: number
 ): Promise<{ icpNumber: number | null; reasoning: string } | null> {
   // Resolve on the first two votes that agree, rather than waiting for the
   // slowest of three. A majority of three is decided the moment two match, so
   // waiting on the third buys nothing but latency — and latency here is the
   // difference between meeting the 15s bar on a lead's first sighting and not.
   // Stragglers are left to finish; their tokens are already committed.
-  const pending = Array.from({ length: CLASSIFIER_VOTES }, () => oneVote(user, usage));
+  const pending = Array.from({ length: CLASSIFIER_VOTES }, () => oneVote(user, usage, deadlineAt));
   const settled: PromiseSettledResult<Vote | null>[] = [];
   const votes: Vote[] = [];
 
@@ -224,7 +256,15 @@ async function runModel(
     // Every vote failed. A transport failure must reach the caller as a 502,
     // never as a label; persistent malformed output from a healthy provider is
     // the one case that legitimately falls back (API-007).
-    const transport = settled.find((s) => s.status === "rejected") as PromiseRejectedResult | undefined;
+    const rejections = settled.filter((s): s is PromiseRejectedResult => s.status === "rejected");
+    const allMalformed = rejections.length > 0 && rejections.every((r) => r.reason instanceof MalformedOutputError);
+    if (allMalformed) {
+      // Every vote came back unreadable from a provider that answered. That is
+      // the fixture's case: fall back, do not report an outage.
+      warnings.push("Classifier output was unparseable on every vote; failing closed to Not Core ICP.");
+      return { icpNumber: null, reasoning: "classifier output unparseable", model: "" };
+    }
+    const transport = rejections.find((r) => !(r.reason instanceof MalformedOutputError));
     if (transport) {
       throw new ClassificationError(
         `Classifier model unavailable: ${String((transport.reason as Error)?.message ?? transport.reason).slice(0, 140)}`,
@@ -253,7 +293,7 @@ async function runModel(
     warnings.push(
       `Classifier votes did not agree (${ranked.map((r) => `${r.vote.icpNumber ?? "Not Core"}×${r.count}`).join(", ")}); failing closed.`
     );
-    return { icpNumber: null, reasoning: "no majority among independent classifier votes" };
+    return { icpNumber: null, reasoning: "no majority among independent classifier votes", model: votes[0]?.model ?? "" };
   }
 
   if (top.count < votes.length) {
@@ -330,6 +370,8 @@ export async function classifyV2(
     research?: string | undefined;
     /** Research started before this call, used only if it matches the target. */
     researchTask?: ResearchTask | undefined;
+    /** Whole-request budget; every upstream leg is clamped to what remains. */
+    deadlineAt?: number | undefined;
   },
   exaLedger: ExaLedger
 ): Promise<V2Classification> {
@@ -337,6 +379,7 @@ export async function classifyV2(
   const warnings: string[] = [];
   const timings = { research: 0, model: 0 };
   const agreement = { top: 0, total: 0 };
+  let model = "";
   const domain = input.email.slice(input.email.lastIndexOf("@") + 1).toLowerCase();
 
   // ---- deterministic pre-gates (CLS-003, fail closed) -----------------------
@@ -350,6 +393,7 @@ export async function classifyV2(
       warnings: ["Freemail address without a title fails closed to Not Core ICP."],
       timings,
       agreement,
+      model,
     };
   }
 
@@ -415,6 +459,7 @@ export async function classifyV2(
       warnings,
       timings,
       agreement,
+      model,
     };
   }
 
@@ -447,19 +492,44 @@ export async function classifyV2(
     "",
     research
       ? target?.kind === "name"
-        ? `RESEARCH EVIDENCE (web search by COMPANY NAME — the match to this specific company is UNVERIFIED; if it reads like a different company, do not rely on it):\n${research}`
-        : `RESEARCH EVIDENCE (web research on the employer domain):\n${research}`
+        ? `RESEARCH EVIDENCE (web search by COMPANY NAME — the match to this specific company is UNVERIFIED; if it reads like a different company, do not rely on it):\n${asFactValue(research, 2000)}`
+        : `RESEARCH EVIDENCE (web research on the employer domain):\n${asFactValue(research, 2000)}`
       : "RESEARCH EVIDENCE: none available.",
   ]
     .filter((l) => l !== null)
     .join("\n");
 
   const tModel = Date.now();
-  const verdict = await runModel(lead, usage, warnings, agreement);
+  const verdict = await runModel(lead, usage, warnings, agreement, input.deadlineAt);
   timings.model = Date.now() - tModel;
   if (!verdict) {
     warnings.push("Classifier output was malformed twice; failing closed to Not Core ICP.");
-    return { icpNumber: null, label: icpLabel(null), reasoning: "classifier failure", path: input.title ? "titled" : "email_only", usage, warnings, timings, agreement };
+    return { icpNumber: null, label: icpLabel(null), reasoning: "classifier failure", path: input.title ? "titled" : "email_only", usage, warnings, timings, agreement, model };
+  }
+
+  model = verdict.model || model;
+
+  // A gate that says "CONFIRMED" cannot be confirmed by absent evidence. On the
+  // titled path a research failure was only a warning, so #11 could come back
+  // with "RESEARCH EVIDENCE: none available." in the very prompt that demanded it.
+  if (verdict.icpNumber !== null) {
+    const entry = icpByNumber(verdict.icpNumber);
+    if (entry && entry.evidence_gate !== "none" && !research?.trim()) {
+      warnings.push(
+        `${icpLabel(verdict.icpNumber)} requires ${entry.evidence_gate} evidence and no company research was available; failing closed.`
+      );
+      return {
+        icpNumber: null,
+        label: icpLabel(null),
+        reasoning: `evidence gate "${entry.evidence_gate}" could not be checked without research`,
+        path: input.title ? "titled" : "email_only",
+        usage,
+        warnings,
+        timings,
+        agreement,
+        model,
+      };
+    }
   }
 
   if (!input.title && verdict.icpNumber !== null) {
@@ -475,5 +545,6 @@ export async function classifyV2(
     warnings,
     timings,
     agreement,
+    model,
   };
 }
