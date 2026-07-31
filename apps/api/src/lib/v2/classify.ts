@@ -116,11 +116,38 @@ async function runModel(
  * visitor list carries it), and researching that named company is what lets an
  * evidence-gated ICP be confirmed instead of failing closed for want of a lookup.
  */
+export type ResearchTarget = { kind: "domain" | "name"; value: string; query: string };
+
+/** A research call already in flight, so it can overlap the identity lookup. */
+export type ResearchTask = {
+  target: ResearchTarget;
+  promise: Promise<{ text?: string; failed?: string }>;
+};
+
+/**
+ * Starts research immediately instead of after identity resolution. Nothing in
+ * the query depends on the identity lookup when the caller already knows the
+ * title, and that lookup is the slowest leg by an order of magnitude.
+ *
+ * The promise never rejects: a rejection here would be an unhandled rejection
+ * while the identity leg is still running. Failure is carried as a value and
+ * judged where every other research failure is judged.
+ */
+export function startResearch(target: ResearchTarget, exaLedger: ExaLedger): ResearchTask {
+  return {
+    target,
+    promise: answer(target.query, exaLedger).then(
+      (a) => ({ text: a.text }),
+      (e) => ({ failed: (e as Error)?.message ?? String(e) })
+    ),
+  };
+}
+
 export function researchTarget(input: {
   emailDomain: string;
   companyDomain?: string | undefined;
   company?: string | undefined;
-}): { kind: "domain" | "name"; value: string; query: string } | null {
+}): ResearchTarget | null {
   const corporateEmail = !isFreemail(input.emailDomain) && input.emailDomain !== "";
   if (corporateEmail) {
     return { kind: "domain", value: input.emailDomain, query: companyResearchQuery(input.emailDomain) };
@@ -144,6 +171,8 @@ export async function classifyV2(
     /** Caller-known employer domain; used only when the address is personal. */
     companyDomain?: string | undefined;
     research?: string | undefined;
+    /** Research started before this call, used only if it matches the target. */
+    researchTask?: ResearchTask | undefined;
   },
   exaLedger: ExaLedger
 ): Promise<V2Classification> {
@@ -175,8 +204,19 @@ export async function classifyV2(
   });
   if (!research && target) {
     const t0 = Date.now();
+    // Reuse the in-flight call only when it asked the same question. If the
+    // identity lookup changed what we know about the employer, the pre-started
+    // research is about a different company and is discarded.
+    const inFlight =
+      input.researchTask && input.researchTask.target.value === target.value
+        ? input.researchTask.promise
+        : null;
     try {
-      research = (await answer(target.query, exaLedger)).text;
+      const settled = inFlight
+        ? await inFlight
+        : await answer(target.query, exaLedger).then((a) => ({ text: a.text, failed: undefined }));
+      if (settled.failed) throw new Error(settled.failed);
+      research = settled.text;
       if (target.kind === "name") {
         // Named-company research is weaker evidence than a domain: names are
         // ambiguous, so the model is told so rather than being handed a fact.
