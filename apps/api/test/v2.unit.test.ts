@@ -12,12 +12,19 @@ import {
   getTemplate,
   genericFallback,
   icpByNumber,
+  icpDescriptor,
   icpEntries,
   icpLabel,
   useCasesFor,
 } from "../src/lib/v2/registry";
-import { buildClassifierPrompt } from "../src/lib/v2/classify";
-import { composeFromTemplate, composeNotCore, validateEmailBody } from "../src/lib/v2/compose";
+import { buildClassifierPrompt, researchTarget } from "../src/lib/v2/classify";
+import {
+  articleFor,
+  composeFromTemplate,
+  composeNotCore,
+  proseCase,
+  validateEmailBody,
+} from "../src/lib/v2/compose";
 
 describe("icp registry (v2)", () => {
   test("preserves numbering with no #3, includes #19 Investor and the #20 catch-all", () => {
@@ -128,6 +135,111 @@ describe("composition fixtures (spec §6)", () => {
     const { body } = composeNotCore({ messageType: "cold_outbound", ctx: { sender_name: "Jacob" } });
     assert.ok(!/your (icp|sector|industry|team's)/i.test(body));
     assert.match(body, /^Hi there,/);
+  });
+});
+
+describe("English mechanics (regressions from the real visitor list)", () => {
+  test("articles agree with the sound of the following word, not its spelling", () => {
+    assert.equal(articleFor("investing team"), "an");
+    assert.equal(articleFor("startup GTM team"), "a");
+    assert.equal(articleFor("CRE brokerage team"), "a", "'see-are-ee' takes 'a'");
+    assert.equal(articleFor("SDR team"), "an", "'ess-dee-are' takes 'an'");
+    assert.equal(articleFor("MCP server"), "an");
+    assert.equal(articleFor("US-based fund"), "a", "'you-ess' takes 'a'");
+    assert.equal(articleFor("university spinout"), "a");
+    assert.equal(articleFor("one-off round"), "a");
+    assert.equal(articleFor("hour-long call"), "an");
+    assert.equal(articleFor("enterprise AE"), "an");
+  });
+
+  test("prose casing lowercases words but preserves acronyms", () => {
+    assert.equal(proseCase("Startup GTM"), "startup GTM");
+    assert.equal(proseCase("CRE Broker"), "CRE broker");
+    assert.equal(proseCase("Startup HR Platform"), "startup HR platform");
+    assert.equal(proseCase("Recruiting Agency"), "recruiting agency");
+  });
+
+  test("every ICP carries a prose descriptor that the composer can inflect", () => {
+    for (const e of icpEntries()) {
+      const d = icpDescriptor(e.number);
+      assert.ok(d, `#${e.number} has no descriptor`);
+      assert.doesNotMatch(d!, /^(a|an|the)\s/i, `#${e.number} descriptor carries its own article`);
+      assert.doesNotMatch(d!, /[.!?]$/, `#${e.number} descriptor is a sentence`);
+    }
+    assert.equal(icpDescriptor(null), null);
+  });
+
+  test("the two sentences that actually went out are now correct", () => {
+    // Shipped once as: "One useful alert for a investor team is thesis-based
+    // deal alerts — for example: Developer-tools rounds under $15M, weekly.."
+    const visitor = getTemplate("website_visitor_use_case")!;
+    const investor = composeFromTemplate({
+      template: visitor,
+      useCases: useCasesFor(19),
+      ctx: { first_name: "Jeremy", sender_name: "Jacob", icp_descriptor: icpDescriptor(19) ?? undefined },
+    });
+    assert.deepEqual(investor.issues, [], JSON.stringify(investor.issues));
+    assert.match(investor.body, /for an investing team is/);
+    assert.doesNotMatch(investor.body, /\.\./);
+    assert.match(investor.body, /under \$15M, weekly\.\n/);
+
+    // And: "One useful alert for a startup gtm team is ... hourly.."
+    const gtm = composeFromTemplate({
+      template: visitor,
+      useCases: useCasesFor(20),
+      ctx: { first_name: "Max", sender_name: "Jacob", icp_descriptor: icpDescriptor(20) ?? undefined },
+    });
+    assert.deepEqual(gtm.issues, [], JSON.stringify(gtm.issues));
+    assert.match(gtm.body, /for a startup GTM team is/);
+    assert.doesNotMatch(gtm.body, /\.\./);
+  });
+
+  test("every ICP composes a clean body through every template that names one", () => {
+    for (const id of ["website_visitor_use_case", "followup_alerts_paid"]) {
+      const t = getTemplate(id)!;
+      for (const e of icpEntries()) {
+        const { body, issues } = composeFromTemplate({
+          template: t,
+          useCases: useCasesFor(e.number),
+          ctx: { first_name: "Sam", sender_name: "Jacob", icp_descriptor: icpDescriptor(e.number) ?? undefined },
+        });
+        assert.deepEqual(issues, [], `${id} / ICP #${e.number}: ${JSON.stringify(issues)}`);
+        assert.doesNotMatch(body, /\{\{|\}\}/, `${id} / #${e.number}`);
+      }
+    }
+  });
+
+  test("the validator now blocks both defect classes", () => {
+    assert.ok(validateEmailBody("Hey Reed,\n\nOne for a investor team.").some((i) => i.rule === "article-disagreement"));
+    assert.ok(validateEmailBody("Hey Reed,\n\nRounds under $15M, weekly..").some((i) => i.rule === "double-punctuation"));
+    // ...without flagging correct English that merely looks irregular.
+    assert.deepEqual(validateEmailBody("Hey Reed,\n\nAn hour with a university team and an SDR.\n\nBest,\nJacob"), []);
+  });
+});
+
+describe("research target selection", () => {
+  test("a corporate address always wins", () => {
+    const t = researchTarget({ emailDomain: "fal.ai", companyDomain: "example.com", company: "Fal" });
+    assert.equal(t?.kind, "domain");
+    assert.equal(t?.value, "fal.ai");
+  });
+
+  test("a personal address falls back to the caller's company domain", () => {
+    const t = researchTarget({ emailDomain: "gmail.com", companyDomain: "remarkable.vc", company: "Remarkable Ventures" });
+    assert.equal(t?.kind, "domain");
+    assert.equal(t?.value, "remarkable.vc");
+  });
+
+  test("with no domain at all, research runs on the company name", () => {
+    const t = researchTarget({ emailDomain: "gmail.com", company: "Bbnk Talent Advisors" });
+    assert.equal(t?.kind, "name");
+    assert.match(t!.query, /"Bbnk Talent Advisors"/);
+    assert.match(t!.query, /uncertain/i, "name matches are ambiguous and must say so");
+  });
+
+  test("a personal address with no employer has nothing to research", () => {
+    assert.equal(researchTarget({ emailDomain: "gmail.com" }), null);
+    assert.equal(researchTarget({ emailDomain: "gmail.com", companyDomain: "yahoo.com" }), null);
   });
 });
 

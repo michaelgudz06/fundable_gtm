@@ -18,7 +18,10 @@ import approvedClaimsJson from "../../../../../config/registry/approved_claims.j
 
 export type IcpEntry = {
   number: number;
+  /** Taxonomy label. Appears in `icp` output and the classifier prompt — never in prose. */
   name: string;
+  /** Prose form for email bodies: bare noun phrase, no article, acronyms intact. */
+  email_descriptor: string;
   roles: string;
   company: string;
   evidence_gate: "none" | "startup_customers_required" | "startup_focus";
@@ -85,6 +88,16 @@ if (!icpRegistry.icps.some((i) => i.catch_all)) fail("no catch-all (#20) defined
 {
   const nums = icpRegistry.icps.map((i) => i.number);
   if (new Set(nums).size !== nums.length) fail("duplicate ICP numbers");
+}
+for (const i of icpRegistry.icps) {
+  // Prose descriptors are a build-time contract, not a nice-to-have: the
+  // composer inflects the article itself, so a descriptor that carries its own
+  // article ("an investing team") would compose to "a an investing team".
+  if (!i.email_descriptor?.trim()) fail(`ICP #${i.number} has no email_descriptor`);
+  if (/^(a|an|the)\s/i.test(i.email_descriptor)) {
+    fail(`ICP #${i.number} email_descriptor must not begin with an article: "${i.email_descriptor}"`);
+  }
+  if (/[.!?]$/.test(i.email_descriptor)) fail(`ICP #${i.number} email_descriptor must not be a sentence`);
 }
 
 const useCaseCatalog = useCaseCatalogJson as {
@@ -157,6 +170,12 @@ export function icpLabel(number: number | null): string {
 
 export function icpByNumber(number: number): IcpEntry | null {
   return icpRegistry.icps.find((i) => i.number === number) ?? null;
+}
+
+/** The prose form for email copy. Never use `name` in a sentence. */
+export function icpDescriptor(number: number | null): string | null {
+  if (number === null) return null;
+  return icpByNumber(number)?.email_descriptor ?? null;
 }
 
 /** Deterministic, primary-first, max three (USE-001..003). */

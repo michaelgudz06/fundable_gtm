@@ -169,6 +169,20 @@ export function companyResearchQuery(domain: string): string {
   return `What does the company at domain ${domain} do, and does it primarily sell to startups? Is it a small company or large enterprise?`;
 }
 
+/**
+ * Research by company NAME, for leads whose address is personal. A gmail lead
+ * is not an unknown lead — the visitor list still names their employer — and
+ * without this the gated ICPs (#1, #17, #18 and the startup-customer set) can
+ * never be confirmed, so every such lead fails closed for want of a lookup.
+ *
+ * The name is quoted and length-capped: it is caller-supplied text entering a
+ * search query, and a "company name" of two paragraphs is not a company name.
+ */
+export function companyResearchQueryByName(name: string): string {
+  const clean = name.replace(/\s+/g, " ").trim().slice(0, 120);
+  return `What does the company "${clean}" do, and does it primarily sell to startups or venture-backed companies? Is it a small company or a large enterprise? If several companies share this name, describe the most likely one and say that the match is uncertain.`;
+}
+
 // ---------------------------------------------------------------------------
 // Classification
 // ---------------------------------------------------------------------------

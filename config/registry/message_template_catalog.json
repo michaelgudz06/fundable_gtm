@@ -1,5 +1,5 @@
 {
-  "version": "2.0.0",
+  "version": "2.1.0",
   "//": "Template catalog per SPEC-v2 §4 (TPL-001..005). Frames, not final prose. Variables use {{name}}; every variable must resolve or fall back grammatically (GEN-005) — a raw token in output is a validation failure. Bodies are derived from Jacob's real sent copy; provenance names the source but does NOT auto-approve embedded claims: anything numeric/customer/trial was moved to approved_claims.json as pending_review and REMOVED from these frames until approved.",
   "greeting_fallback": "Hi there,",
   "generic_fallbacks": {
@@ -37,7 +37,7 @@
     },
     {
       "id": "website_visitor_use_case",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source": "Orange Slice messaging examples (cross-border conversation)",
       "allowed_message_types": ["website_visitor"],
       "audience": "identified company-level website visitor",
@@ -45,11 +45,11 @@
       "optional_context": ["first_name", "sender_name"],
       "cta_policy": "low-pressure setup offer; NEVER claim signup/payment; NEVER reveal tracking context",
       "claim_refs": ["capability-deal-alerts"],
-      "body": "{{greeting}}\n\nWe have Deal Alerts where you can track companies after a raise. One useful alert for a {{icp_descriptor}} team is {{primary_use_case_clause}}.\n\nLet me know if worth finding time to get you set up,\n{{sender_name}}"
+      "body": "{{greeting}}\n\nWe have Deal Alerts where you can track companies after a raise. One useful alert for {{icp_descriptor_phrase}} is {{primary_use_case_clause}}.\n\nLet me know if worth finding time to get you set up,\n{{sender_name}}"
     },
     {
       "id": "followup_alerts_paid",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source": "Resend follow-ups",
       "allowed_message_types": ["nurture"],
       "audience": "paid user, no alert created yet",
@@ -57,7 +57,7 @@
       "optional_context": ["first_name", "sender_name"],
       "cta_policy": "drive first alert creation",
       "claim_refs": ["capability-deal-alerts"],
-      "body": "{{greeting}}\n\nNoticed you haven't set up an alert yet. For {{icp_descriptor_or_generic}}, the one I'd start with: {{primary_use_case_clause}}.\n\nWant me to set it up with you?\n\nBest,\n{{sender_name}}"
+      "body": "{{greeting}}\n\nNoticed you haven't set up an alert yet. For {{icp_descriptor_phrase_or_generic}}, the one I'd start with: {{primary_use_case_clause}}.\n\nWant me to set it up with you?\n\nBest,\n{{sender_name}}"
     },
     {
       "id": "followup_alerts_unpaid",
