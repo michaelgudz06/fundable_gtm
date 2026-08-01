@@ -16,6 +16,12 @@
  * IMPORTANT asymmetry, and the main thing to read the output through: the
  * reference labels were produced with the lead's JOB TITLE in hand (their
  * reasoning names it). This API is given only what a visitor list actually
+ * SUPERSEDED, 2026-08-01: this script models the visitor feed as carrying no
+ * title. The Orange Slice export has a real Title column at 78.8% and Company
+ * Name at 86.4%. Passing them lifts core recall 9.4% -> 37.5% on identical rows
+ * with Not Core precision unchanged (scripts/benchmark-real-titles.ts). Numbers
+ * from here describe the bare path only; they are not the ceiling.
+ *
  * carries — an email and a LinkedIn URL — and resolves a title only if Fundable's
  * people index happens to hold the profile. A row where we answer Not Core
  * because we could not see a title is a missing-input result, not a
