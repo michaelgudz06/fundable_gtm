@@ -1,0 +1,467 @@
+{
+  "//": "Human-approved labels ONLY. A gold set our own classifier labelled would measure its own consistency, not its accuracy.",
+  "version": "1",
+  "frozen_at": "2026-08-01T07:36:31.751Z",
+  "rows": [
+    {
+      "id": "boundary-10-unconfirmed",
+      "label": "Not Core ICP",
+      "email": "ae@example-fxbank.com",
+      "title": "Account Executive",
+      "company": "Example FX Bank",
+      "boundary_for": "startup_customers_required (unconfirmed -> Not Core)",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "boundary-11-over-20",
+      "label": "ICP #11: Startup HR Platform",
+      "email": "gtm@example-hrplatform.com",
+      "title": "Head of Growth",
+      "company": "Example HR Platform",
+      "boundary_for": "specific ICP takes precedence over #20 catch-all",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "boundary-6-venture",
+      "label": "ICP #6: Founder",
+      "email": "founder@example-devtools.com",
+      "title": "Co-Founder & CEO",
+      "company": "Example Devtools",
+      "boundary_for": "#6 requires a venture-style startup",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "boundary-6-consultancy",
+      "label": "Not Core ICP",
+      "email": "owner@example-consultancy.com",
+      "title": "Founder",
+      "company": "Example Local Consultancy",
+      "boundary_for": "#6 excludes consultancies and local services",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "boundary-9-product",
+      "label": "ICP #9: Startup Data Customer",
+      "email": "cto@example-enrichment.com",
+      "title": "CTO",
+      "company": "Example Enrichment",
+      "boundary_for": "#9 is product/engineering roles only",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "boundary-9-sales-is-20",
+      "label": "ICP #20: Startup GTM",
+      "email": "sales@example-enrichment.com",
+      "title": "Account Executive",
+      "company": "Example Enrichment",
+      "boundary_for": "a GTM role at a data startup is #20, not #9",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "boundary-19-fund",
+      "label": "ICP #19: Investor",
+      "email": "partner@example-seedfund.com",
+      "title": "Partner",
+      "company": "Example Seed Fund",
+      "boundary_for": "#19 is core in v2 (reverses the v1 VC exclusion)",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "boundary-19-residential",
+      "label": "ICP #2: CRE Broker",
+      "email": "broker@example-homes.com",
+      "title": "Broker",
+      "company": "Example Residential Realty",
+      "boundary_for": "residential real estate is excluded outright",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "boundary-19-newsletter",
+      "label": "Not Core ICP",
+      "email": "editor@example-vcnewsletter.com",
+      "title": "Editor",
+      "company": "Example VC Newsletter",
+      "boundary_for": "VC newsletter operators are excluded outright",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "slice-personal-email",
+      "label": "Not Core ICP",
+      "email": "someone.random@gmail.com",
+      "slice": "personal email, no title",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "slice-missing-name",
+      "label": "Not Core ICP",
+      "email": "info@example-unknown.com",
+      "slice": "missing name",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "slice-sparse-evidence",
+      "label": "Not Core ICP",
+      "email": "contact@example-noweb.com",
+      "title": "Manager",
+      "slice": "sparse evidence",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "slice-past-vs-current-role",
+      "label": "ICP #20: Startup GTM",
+      "email": "gtm@example-startup.com",
+      "title": "Head of Sales (previously Partner at a VC fund)",
+      "company": "Example Startup",
+      "boundary_for": "current role only, never background",
+      "slice": "past vs current role",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-boucard",
+      "label": "ICP #20: Startup GTM",
+      "email": "olivier@paywithextend.com",
+      "title": "VP of SaaS & Channel Revenue",
+      "linkedin": "https://www.linkedin.com/in/boucard",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-karanpatel380",
+      "label": "ICP #6: Founder",
+      "email": "karan@gotraderunner.com",
+      "title": "Co-Founder",
+      "linkedin": "https://www.linkedin.com/in/karanpatel380",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-jimmccahon",
+      "label": "ICP #2: CRE Broker",
+      "email": "jim.mccahon@jll.com",
+      "title": "Director, Transactions Management",
+      "linkedin": "https://www.linkedin.com/in/jimmccahon",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-poojanpmehta",
+      "label": "ICP #19: Investor",
+      "email": "pmehta@personstpartners.com",
+      "title": "Partner/Co-Founder",
+      "linkedin": "https://www.linkedin.com/in/poojanpmehta",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-mohit-manhas",
+      "label": "ICP #6: Founder",
+      "email": "mohitm252@gmail.com",
+      "linkedin": "https://www.linkedin.com/in/mohit-manhas",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-robert-stillman-a05bb36",
+      "label": "ICP #2: CRE Broker",
+      "email": "robert.stillman@cbre.com",
+      "title": "Vice Chairman",
+      "linkedin": "https://www.linkedin.com/in/robert-stillman-a05bb36",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-roseannewincek",
+      "label": "ICP #19: Investor",
+      "email": "rwincek@gmail.com",
+      "title": "well-known venture capital investor (formerly",
+      "linkedin": "https://www.linkedin.com/in/roseannewincek",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-jack-leeney",
+      "label": "ICP #19: Investor",
+      "email": "leeney3@aol.com",
+      "linkedin": "https://www.linkedin.com/in/jack-leeney",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-natrajiitb",
+      "label": "ICP #6: Founder",
+      "email": "n@accuknox.com",
+      "linkedin": "https://www.linkedin.com/in/natrajiitb",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-john-rivard",
+      "label": "ICP #19: Investor",
+      "email": "rivardjohn@gmail.com",
+      "linkedin": "https://www.linkedin.com/in/john-rivard",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-w-jack-feng",
+      "label": "ICP #6: Founder",
+      "email": "jack_feng@binaceapharma.com",
+      "linkedin": "https://www.linkedin.com/in/w-jack-feng",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-casudhirkumar",
+      "label": "ICP #16: Other Startup Agency",
+      "email": "skumar@ceoally.com",
+      "linkedin": "https://www.linkedin.com/in/casudhirkumar",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-jeremy-harper-8945b732",
+      "label": "ICP #19: Investor",
+      "email": "jeremypharper@gmail.com",
+      "linkedin": "https://www.linkedin.com/in/jeremy-harper-8945b732",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-max-w-1161541b7",
+      "label": "ICP #20: Startup GTM",
+      "email": "max@fal.ai",
+      "title": "GTM (Go-to-Market)",
+      "linkedin": "https://www.linkedin.com/in/max-w-1161541b7",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-natashakazatsker",
+      "label": "ICP #1: Recruiting Agency",
+      "email": "natashakaz9@gmail.com",
+      "title": "Co-Founder & Talent Advisor",
+      "linkedin": "https://www.linkedin.com/in/natashakazatsker",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-lisabutlerdelrio",
+      "label": "ICP #12: Startup Insurance",
+      "email": "lisa.butler-delrio@alliant.com",
+      "linkedin": "https://www.linkedin.com/in/lisabutlerdelrio",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-loralie-ogden",
+      "label": "ICP #2: CRE Broker",
+      "email": "loralie.ogden@cbre.com",
+      "linkedin": "https://www.linkedin.com/in/loralie-ogden",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-tandondhruv",
+      "label": "ICP #6: Founder",
+      "email": "dhruv@getdecisional.ai",
+      "linkedin": "https://www.linkedin.com/in/tandondhruv",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-katiestolowitz",
+      "label": "ICP #19: Investor",
+      "email": "kstolowitz@spectrumequity.com",
+      "title": "Events",
+      "linkedin": "https://www.linkedin.com/in/katiestolowitz",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-jim-hays-81379b64",
+      "label": "ICP #6: Founder",
+      "email": "jhays@exostatmedical.com",
+      "linkedin": "https://www.linkedin.com/in/jim-hays-81379b64",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-chaduriejll",
+      "label": "ICP #2: CRE Broker",
+      "email": "chad.urie@am.jll.com",
+      "title": "Vice Chairman / Life Science Co-Lead",
+      "linkedin": "https://www.linkedin.com/in/chaduriejll",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-benjaminwlester",
+      "label": "ICP #19: Investor",
+      "email": "ben.lester@jordanpark.com",
+      "linkedin": "https://www.linkedin.com/in/benjaminwlester",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-tomhschmidt",
+      "label": "ICP #19: Investor",
+      "email": "tom@dcp.capital",
+      "title": "Partner",
+      "linkedin": "https://www.linkedin.com/in/tomhschmidt",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-andre-gutierrez1010",
+      "label": "ICP #5: Enterprise AE Selling to Startups",
+      "email": "andregm10@live.com",
+      "title": "Director of Account Management (Corporates)",
+      "linkedin": "https://www.linkedin.com/in/andre-gutierrez1010",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-koko-zarov-a54b3061",
+      "label": "ICP #6: Founder",
+      "email": "koko@lifesight.io",
+      "title": "Founder & CEO",
+      "linkedin": "https://www.linkedin.com/in/koko-zarov-a54b3061",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-carlos-cruz-3a98ba100",
+      "label": "ICP #6: Founder",
+      "email": "carlos@tsgs.com",
+      "linkedin": "https://www.linkedin.com/in/carlos-cruz-3a98ba100",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-mike-pharis-8aa76b6",
+      "label": "ICP #5: Enterprise AE Selling to Startups",
+      "email": "mike.pharis@fonoa.com",
+      "title": "Enterprise Account Executive",
+      "linkedin": "https://www.linkedin.com/in/mike-pharis-8aa76b6",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-kevin-perry-bba6831b6",
+      "label": "ICP #5: Enterprise AE Selling to Startups",
+      "email": "kevin.perry@datadoghq.com",
+      "linkedin": "https://www.linkedin.com/in/kevin-perry-bba6831b6",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-cody-borchardt-21505669",
+      "label": "ICP #14: Startup Hiring Platform",
+      "email": "cody.borchardt@revelo.com",
+      "linkedin": "https://www.linkedin.com/in/cody-borchardt-21505669",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-jeffuken",
+      "label": "ICP #5: Enterprise AE Selling to Startups",
+      "email": "jeff.uken@gmail.com",
+      "title": "sales/strategic account role (AE-equivalent)",
+      "linkedin": "https://www.linkedin.com/in/jeffuken",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-kounhan",
+      "label": "ICP #9: Startup Data Customer",
+      "email": "koun1224@gmail.com",
+      "linkedin": "https://www.linkedin.com/in/kounhan",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-tommy-hines-16a91a45",
+      "label": "ICP #2: CRE Broker",
+      "email": "thomas.hines@transwestern.com",
+      "title": "Senior Vice President",
+      "linkedin": "https://www.linkedin.com/in/tommy-hines-16a91a45",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-corrieslewett",
+      "label": "ICP #2: CRE Broker",
+      "email": "corrie.slewett@transwestern.com",
+      "title": "Research Manager and Leader",
+      "linkedin": "https://www.linkedin.com/in/corrieslewett",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-devin-gfeller-85b94574",
+      "label": "ICP #2: CRE Broker",
+      "email": "devin@g4capitalgroup.com",
+      "title": "commercial real estate broker and principal",
+      "linkedin": "https://www.linkedin.com/in/devin-gfeller-85b94574",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-jdessen",
+      "label": "ICP #2: CRE Broker",
+      "email": "jasondessen@gmail.com",
+      "title": "Principal",
+      "linkedin": "https://www.linkedin.com/in/jdessen",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-benjamin-soutas",
+      "label": "ICP #15: Startup Accounting",
+      "email": "ben.soutas@emberhome.com",
+      "title": "Head of Marketing",
+      "linkedin": "https://www.linkedin.com/in/benjamin-soutas",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-chase-melton-b761aa15",
+      "label": "ICP #8: Growth Equity / Growth Lending",
+      "email": "cmelton@avidbank.com",
+      "title": "professional",
+      "linkedin": "https://www.linkedin.com/in/chase-melton-b761aa15",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-nate-bridgewater",
+      "label": "ICP #1: Recruiting Agency",
+      "email": "nate@zenith-gp.com",
+      "linkedin": "https://www.linkedin.com/in/nate-bridgewater",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-loris-macieira-coelho-6o70",
+      "label": "ICP #11: Startup HR Platform",
+      "email": "loris@riseworks.io",
+      "linkedin": "https://www.linkedin.com/in/loris-macieira-coelho-6o70",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-georgewang89",
+      "label": "ICP #16: Other Startup Agency",
+      "email": "georgewang89@gmail.com",
+      "title": "leadership and business development",
+      "linkedin": "https://www.linkedin.com/in/georgewang89",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-amelia-metters-77b86b1a8",
+      "label": "ICP #14: Startup Hiring Platform",
+      "email": "amelia@squadtalent.xyz",
+      "title": "Growth",
+      "linkedin": "https://www.linkedin.com/in/amelia-metters-77b86b1a8",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-drake-duenas-261a3550",
+      "label": "ICP #13: Startup Compliance",
+      "email": "drake.duenas@conductorone.com",
+      "title": "Account Executive",
+      "linkedin": "https://www.linkedin.com/in/drake-duenas-261a3550",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-stephen-melzer-32b7364",
+      "label": "ICP #1: Recruiting Agency",
+      "email": "stephenmelzer@melzerandcompany.com",
+      "linkedin": "https://www.linkedin.com/in/stephen-melzer-32b7364",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-alexmbarnes",
+      "label": "ICP #16: Other Startup Agency",
+      "email": "alex@codi.com",
+      "title": "Head of Growth",
+      "linkedin": "https://www.linkedin.com/in/alexmbarnes",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-katelynhgallanty",
+      "label": "ICP #16: Other Startup Agency",
+      "email": "katelyn.gallanty@citigroup.com",
+      "linkedin": "https://www.linkedin.com/in/katelynhgallanty",
+      "approved_by": "human-review"
+    },
+    {
+      "id": "mined-bradenbusch",
+      "label": "ICP #16: Other Startup Agency",
+      "email": "bb@scionstaffing.com",
+      "linkedin": "https://www.linkedin.com/in/bradenbusch",
+      "approved_by": "human-review"
+    }
+  ]
+}

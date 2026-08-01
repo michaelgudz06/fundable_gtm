@@ -69,8 +69,24 @@ type GoldRow = {
 
 type GoldSet = { version: string; frozen_at: string; rows: GoldRow[] };
 
+/**
+ * Classify one row, retrying the failures that are about load rather than the row.
+ *
+ * The first version returned null on any non-200 and retried only on a thrown
+ * exception. That silently converted server-side flakiness into missing rows,
+ * and the summary still printed a headline macro-F1 over whatever survived —
+ * a measured 21 of 59 rows vanished this way, and the number computed on the
+ * remaining 38 was reported as if it described the whole set.
+ *
+ * A 5xx here is nearly always the Fundable /people leg under concurrency (19s
+ * cold), so it is worth retrying with backoff. A 4xx is a real answer about the
+ * request and is not retried — except 429, which is the harness's own fault for
+ * asking too fast.
+ */
 async function classify(row: GoldRow): Promise<string | null> {
-  for (let attempt = 0; attempt < 2; attempt++) {
+  const ATTEMPTS = 4;
+  for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 500 * 2 ** (attempt - 1)));
     try {
       const res = await fetch(`${BASE}/api/classify`, {
         method: "POST",
@@ -82,11 +98,14 @@ async function classify(row: GoldRow): Promise<string | null> {
           ...(row.linkedin ? { linkedin: row.linkedin } : {}),
         }),
       });
-      const j = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-      if (res.status !== 200) return null;
-      return typeof j.icp === "string" ? j.icp : null;
+      if (res.status === 200) {
+        const j = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+        return typeof j.icp === "string" ? j.icp : null;
+      }
+      const retryable = res.status >= 500 || res.status === 429;
+      if (!retryable) return null;
     } catch {
-      /* one retry */
+      /* network-level: retry */
     }
   }
   return null;
@@ -159,7 +178,7 @@ async function main() {
   process.stdout.write(`gold set ${gold.version} — ${gold.rows.length} rows -> ${BASE}\n\n`);
 
   let done = 0;
-  const results = await mapLimit(gold.rows, 5, async (row) => {
+  const results = await mapLimit(gold.rows, 2, async (row) => {
     const predicted = await classify(row);
     done++;
     if (done % 20 === 0) process.stdout.write(`  ${done}/${gold.rows.length}\n`);
@@ -180,6 +199,26 @@ async function main() {
   L.push("");
   L.push(`Scored ${scored.length}/${gold.rows.length} rows against \`${BASE}\`.`);
   L.push("");
+
+  // Coverage gate. A metric computed over the rows that happened to succeed is
+  // not a metric over the gold set: the rows that fail are the slow ones —
+  // no title, LinkedIn resolution through Fundable's /people leg — which is
+  // exactly the population whose accuracy is in question. Reporting a headline
+  // macro-F1 across a biased subset is worse than reporting nothing, because it
+  // looks like an answer. A measured run once lost 21 of 59 rows this way.
+  const coverage = scored.length / Math.max(1, gold.rows.length);
+  const COVERAGE_FLOOR = 0.95;
+  const short = coverage < COVERAGE_FLOOR;
+  if (short) {
+    L.push(`> **These numbers are not usable.** ${unreachable.length} of ${gold.rows.length} rows`);
+    L.push(`> (${pct(1 - coverage)}) did not return a label, and the rows that fail are the slow`);
+    L.push("> ones — no title, LinkedIn resolved through Fundable — so what is left is a biased");
+    L.push("> subset, not a sample. Re-run; if it persists, the API is failing, not the classifier.");
+    L.push("");
+    L.push(`> Unreachable: ${unreachable.map((r) => r.row.id).join(", ")}`);
+    L.push("");
+  }
+
   L.push("| metric | value |");
   L.push("|---|---|");
   L.push(`| **macro-F1** | **${macroF1.toFixed(3)}** |`);
@@ -188,6 +227,30 @@ async function main() {
   L.push(`| Hard-rule (boundary) accuracy | ${boundary.length ? `${pct(boundaryPassed / boundary.length)} (${boundaryPassed}/${boundary.length})` : "no boundary rows"} |`);
   L.push(`| Labels with support | ${supported.length} |`);
   L.push(`| Unreachable (error/timeout) | ${unreachable.length} |`);
+  L.push("");
+
+  // Input regime. Every accuracy number this project has produced is really a
+  // number about how much the caller knew, not how well the classifier reasons:
+  // a gated ICP needs confirmed evidence, and with no title and no company there
+  // is nothing to confirm, so the honest answer is Not Core. Splitting on title
+  // presence turns "macro-F1 0.185" from a verdict into a diagnosis, and it is
+  // the single number that says whether to fix the model or the vendor feed.
+  const withTitle = scored.filter((r) => r.row.title);
+  const withoutTitle = scored.filter((r) => !r.row.title);
+  const acc = (rs: typeof scored) =>
+    rs.length ? `${pct(rs.filter((r) => r.predicted === r.truth).length / rs.length)} (${rs.filter((r) => r.predicted === r.truth).length}/${rs.length})` : "no rows";
+  L.push("## By input regime");
+  L.push("");
+  L.push("| caller supplied | exact accuracy |");
+  L.push("|---|---|");
+  L.push(`| email + title | ${acc(withTitle)} |`);
+  L.push(`| email only | ${acc(withoutTitle)} |`);
+  L.push("");
+  L.push(
+    "A gated ICP requires confirmed evidence. With no title and no company there is " +
+      "nothing to confirm, so Not Core is the correct output, not a miss — which is why " +
+      "the gap between these two rows is a vendor question, not a model question."
+  );
   L.push("");
 
   L.push("## Per label");
@@ -224,6 +287,17 @@ async function main() {
     rows_scored: scored.length,
   };
 
+  if (short) {
+    process.exitCode = 1;
+    if (process.argv.includes("--freeze")) {
+      process.stderr.write(
+        "\nRefusing to freeze a baseline from an incomplete run: a baseline is the thing\n" +
+          "every later run is compared against, and one built from a biased subset makes\n" +
+          "every future comparison wrong in the same direction. Re-run first.\n"
+      );
+      return;
+    }
+  }
   if (process.argv.includes("--freeze")) {
     mkdirSync(dirname(baselinePath), { recursive: true });
     writeFileSync(
