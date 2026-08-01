@@ -230,6 +230,8 @@ function mineFromExport(csvPath: string): Candidate[] {
   const iLast = col("last name");
   const iEmail = col("business email");
   const iIcp = col("in icp");
+  const iTitle = col("title");
+  const iCompany = col("company name");
 
   const out: Candidate[] = [];
   const perLabel = new Map<string, number>();
@@ -248,12 +250,23 @@ function mineFromExport(csvPath: string): Candidate[] {
     perLabel.set(label, seen + 1);
 
     const reason = raw.includes("—") ? raw.split("—").slice(1).join("—").trim() : "";
+
+    // Title and company come from the export's own columns. They used to be
+    // regex-scraped out of the reference classifier's reasoning prose, which
+    // found a title on barely half the rows and invented the "the visitor feed
+    // has no titles" premise that shaped months of planning. The export fills
+    // Title on 78.8% of rows and Company Name on 86.4%. Falling back to the
+    // scrape only when the column is genuinely empty.
     const titleMatch = reason.match(/\bis (?:a|an|the) ([^,.;]{3,60}?) at |\bholds (?:a|an|the) ([^.;]{3,70}?) (?:role|title)/);
+    const title = (iTitle >= 0 ? (cells[iTitle] ?? "").trim() : "") ||
+      (titleMatch ? (titleMatch[1] ?? titleMatch[2] ?? "").trim() : "");
+    const company = iCompany >= 0 ? (cells[iCompany] ?? "").trim() : "";
     out.push({
       id: `mined-${(cells[iLi] ?? email).split("/").pop()}`,
       proposed_label: label,
       email,
-      ...(titleMatch ? { title: (titleMatch[1] ?? titleMatch[2] ?? "").trim() } : {}),
+      ...(title ? { title } : {}),
+      ...(company ? { company } : {}),
       ...(cells[iLi] ? { linkedin: cells[iLi].trim() } : {}),
       source: "orange-slice-export",
       decision: "",
@@ -263,9 +276,112 @@ function mineFromExport(csvPath: string): Candidate[] {
   return out;
 }
 
+/**
+ * Fill title/company on an EXISTING queue from an export, preserving decisions.
+ *
+ * The queue was mined before anyone noticed the export had a Title column, so
+ * 23 of 59 approved rows carry no title — and a gated ICP with no role and no
+ * company has nothing to confirm, so it correctly answers Not Core. The
+ * resulting macro-F1 of 0.185 was therefore measuring the miner, not the
+ * classifier. Re-mining from scratch would fix the fields and throw away every
+ * human decision, which is the expensive part. This matches on LinkedIn URL
+ * first (stable) then email, and only ever ADDS fields.
+ *
+ *   npx tsx scripts/build-gold-set.ts --enrich <export.csv>
+ */
+function enrichQueue(csvPath: string, queuePath: string): void {
+  const grid = parseCsv(readFileSync(csvPath, "utf8").replace(/^\ufeff/, ""));
+  const header = (grid[0] ?? []).map((h) => h.trim().toLowerCase());
+  const col = (n: string) => header.indexOf(n);
+  const iLi = col("linkedin url");
+  const iEmail = col("business email");
+  const iTitle = col("title");
+  const iCompany = col("company name");
+  if (iTitle < 0) throw new Error(`No "Title" column in ${csvPath}`);
+
+  const norm = (u: string) => u.trim().toLowerCase().replace(/\/+$/, "");
+  const byLi = new Map<string, string[]>();
+  const byEmail = new Map<string, string[]>();
+  for (const cells of grid.slice(1)) {
+    if (iLi >= 0 && cells[iLi]) byLi.set(norm(cells[iLi]), cells);
+    if (iEmail >= 0 && cells[iEmail]) byEmail.set(norm(cells[iEmail]), cells);
+  }
+
+  const queue = JSON.parse(readFileSync(queuePath, "utf8")) as { rows: Candidate[] };
+  let title = 0;
+  let company = 0;
+  for (const r of queue.rows) {
+    const hit = (r.linkedin ? byLi.get(norm(r.linkedin)) : undefined) ?? byEmail.get(norm(r.email));
+    if (!hit) continue;
+    const t = iTitle >= 0 ? (hit[iTitle] ?? "").trim() : "";
+    const c = iCompany >= 0 ? (hit[iCompany] ?? "").trim() : "";
+    if (t && !r.title) {
+      r.title = t;
+      title++;
+    }
+    if (c && !r.company) {
+      r.company = c;
+      company++;
+    }
+  }
+  writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\n");
+  process.stdout.write(
+    `enriched ${queuePath}: +${title} titles, +${company} companies ` +
+      `(${queue.rows.filter((r) => r.title).length}/${queue.rows.length} now have a title)\n` +
+      `decisions preserved: ${queue.rows.filter((r) => r.decision).length}\n`
+  );
+}
+
+/**
+ * Boundary rows, taken from the verified hard-rule fixtures.
+ *
+ * These used to be authored here against example-*.com addresses, on the
+ * reasoning that a gold set full of real strangers is a liability. That is
+ * true, and it produced rows that CANNOT PASS: a gated ICP needs confirmable
+ * evidence, and a company that does not exist supplies none, so every
+ * positive-side boundary row failed closed to Not Core. All four hard-rule
+ * failures in the first evaluation were this, not the classifier.
+ *
+ * config/eval/hard_rules.json already solved it the right way — real companies,
+ * synthetic role@ addresses, so the row tests a rule rather than a person — and
+ * those 21 fixtures pass 21/21 live. Deriving boundary rows from them means one
+ * definition of each rule instead of two that can drift, and no expectation
+ * enters the gold set that has not already been demonstrated reachable.
+ *
+ * They are marked `registry-derived` rather than `human-review`: their expected
+ * answer follows from the registry, so a human ratifying them would be
+ * confirming a rule, not supplying a judgment.
+ */
+function boundaryRowsFromHardRules(): Candidate[] {
+  const hr = JSON.parse(readFileSync(join(ROOT, "config/eval/hard_rules.json"), "utf8")) as {
+    rows: { id: string; rule: string; expect: string; email: string; title?: string; company?: string; why: string }[];
+  };
+  return hr.rows.map((r) => ({
+    id: `hardrule-${r.id}`,
+    proposed_label: r.expect,
+    email: r.email,
+    ...(r.title ? { title: r.title } : {}),
+    ...(r.company ? { company: r.company } : {}),
+    source: "hard-rules",
+    boundary_for: r.rule,
+    // Pre-decided: the expectation is derivable from the registry and already
+    // verified live. Leaving it blank would put 21 rows in front of a reviewer
+    // whose only honest answer is "yes, that is what the registry says".
+    decision: "approve",
+    note: r.why,
+  }));
+}
+
 function main() {
   const outDir = join(ROOT, "config/eval");
   mkdirSync(outDir, { recursive: true });
+
+  if (process.argv.includes("--enrich")) {
+    const csv = arg("enrich");
+    if (!csv) throw new Error("--enrich <export.csv> is required");
+    enrichQueue(resolve(csv), join(outDir, "review_queue.json"));
+    return;
+  }
 
   if (process.argv.includes("--approve")) {
     const queuePath = resolve(arg("approve", join(outDir, "review_queue.json")) ?? "");
@@ -310,7 +426,11 @@ function main() {
   const csv = arg("csv");
   const mined = csv ? mineFromExport(resolve(csv)) : [];
   const rows: Candidate[] = [
-    ...AUTHORED.map((a) => ({ ...a, decision: "", note: "authored boundary/slice — verify the rule still reads correctly" })),
+    // Boundary rows come from the verified hard-rule fixtures; only the slices
+    // are still authored here, and those legitimately need synthetic domains
+    // (a "sparse evidence" row is testing the absence of evidence).
+    ...boundaryRowsFromHardRules(),
+    ...AUTHORED.filter((a) => a.slice).map((a) => ({ ...a, decision: "", note: "authored slice — verify the rule still reads correctly" })),
     ...mined,
   ];
 
