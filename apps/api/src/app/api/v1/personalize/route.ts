@@ -80,6 +80,13 @@ type RequestBody = {
   message_type?: unknown;
   template_id?: unknown;
   email_template?: unknown;
+  /**
+   * Queue the result for human review instead of handing back something the
+   * caller can send immediately. The body is still returned (so a caller can
+   * show it), but the draft is what a sender is allowed to act on, and only
+   * once a human has approved it.
+   */
+  queue_for_review?: unknown;
   known_fields?: {
     first_name?: unknown;
     title?: unknown;
@@ -496,6 +503,34 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
       await storage.cacheSet(`idem:${registryFingerprint()}:${idemKey}`, "fundable", success, IDEMPOTENCY_TTL_MS);
     }
 
+    // The review gate. When asked for, nothing is sendable until a human says
+    // so: the draft lands as pending_review and a sender can only ever fetch
+    // approved rows.
+    let draftId: string | null = null;
+    if (body.queue_for_review === true) {
+      draftId = await storage.draftCreate({
+        api_key_hash: auth.keyHash,
+        recipient_email: email,
+        recipient_name: ctx.first_name ?? null,
+        company_name: company ?? null,
+        message_type: messageType,
+        icp: cls.label,
+        icp_use_cases: useCases,
+        body_source: trace.bodySource,
+        use_case_type: trace.useCaseType,
+        agreement: trace.agreement || null,
+        body: emailBody,
+        versions: {
+          icp_registry: REGISTRY_VERSIONS.icp_registry,
+          use_case_catalog: REGISTRY_VERSIONS.use_case_catalog,
+          template_catalog: REGISTRY_VERSIONS.template_catalog,
+          approved_claims: REGISTRY_VERSIONS.approved_claims,
+          prompt: CLASSIFIER_PROMPT_VERSION,
+          model_served: trace.modelServed || null,
+        },
+      });
+    }
+
     await record(storage, auth.keyHash, {
       messageType,
       status: "ok",
@@ -509,7 +544,14 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
       validationIssues: [],
     });
 
-    return Response.json(success, { headers: versionHeaders() });
+    // API-003 keeps the body to exactly three keys, so the draft id — which the
+    // caller needs in order to poll for the decision — travels as a header.
+    return Response.json(success, {
+      headers: {
+        ...versionHeaders(trace.modelServed),
+        ...(draftId ? { "X-Draft-Id": draftId, "X-Review-Status": "pending_review" } : {}),
+      },
+    });
   } catch (e) {
     if (e instanceof FundableError) return err(502, "UPSTREAM_FUNDABLE", `${e.message} (Fundable ${e.status})`);
     console.error("[v1/personalize]", e);
