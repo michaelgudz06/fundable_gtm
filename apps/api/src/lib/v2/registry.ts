@@ -136,11 +136,19 @@ function fail(msg: string): never {
   throw new Error(`Registry validation failed: ${msg}`);
 }
 
+export type ExclusionCheck = {
+  id: string;
+  applies_to: number[];
+  evidence_pattern: string;
+  reason: string;
+};
+
 const icpRegistry = icpRegistryJson as {
   version: string;
   cross_cutting_rules: string[];
   icps: IcpEntry[];
   not_core: { name: string };
+  exclusion_checks?: ExclusionCheck[];
 };
 
 if (!icpRegistry.icps?.length) fail("icp_registry has no icps");
@@ -164,6 +172,49 @@ for (const i of icpRegistry.icps) {
   }
   if (/[.!?]$/.test(descriptor)) fail(`ICP #${i.number} email_descriptor must not be a sentence`);
   i.email_descriptor = descriptor;
+}
+
+// Exclusion patterns are compiled once, at load, so a malformed regex fails the
+// build rather than throwing inside a request.
+const EXCLUSIONS: { check: ExclusionCheck; re: RegExp }[] = (icpRegistry.exclusion_checks ?? []).map((check) => {
+  if (!check.id || !check.applies_to?.length || !check.evidence_pattern || !check.reason) {
+    fail(`exclusion check "${check.id}" is missing a required field`);
+  }
+  for (const n of check.applies_to) {
+    if (!icpRegistry.icps.some((i) => i.number === n)) {
+      fail(`exclusion check "${check.id}" targets unknown ICP #${n}`);
+    }
+  }
+  try {
+    return { check, re: new RegExp(check.evidence_pattern, "i") };
+  } catch (e) {
+    return fail(`exclusion check "${check.id}" has an invalid pattern: ${(e as Error).message}`);
+  }
+});
+
+/**
+ * Does the RESEARCH EVIDENCE disqualify this label?
+ *
+ * The cross-cutting exclusions — residential real estate, VC newsletter
+ * operators, public-market investors, local services — were prompt prose, which
+ * means "residential broker -> Not Core" rested entirely on the model choosing
+ * to apply a rule it had been told. This checks the ones that are checkable.
+ *
+ * Deliberately reads ONLY research evidence. Matching caller-supplied fields
+ * would let a caller force a rejection by writing the right words into a company
+ * name, which is the mirror image of the injection this codebase already blocks.
+ */
+export function exclusionFor(icpNumber: number | null, evidence: string): ExclusionCheck | null {
+  if (icpNumber === null || !evidence.trim()) return null;
+  for (const { check, re } of EXCLUSIONS) {
+    if (check.applies_to.includes(icpNumber) && re.test(evidence)) return check;
+  }
+  return null;
+}
+
+/** Exposed for tests: the compiled checks, so coverage can be asserted. */
+export function exclusionChecks(): ExclusionCheck[] {
+  return EXCLUSIONS.map((e) => e.check);
 }
 
 type AlertAssignment = {

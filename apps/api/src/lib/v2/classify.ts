@@ -26,7 +26,7 @@ import {
   type Usage,
 } from "@fundable/shared";
 
-import { crossCuttingRules, icpByNumber, icpEntries, icpLabel, REGISTRY_VERSIONS } from "./registry";
+import { crossCuttingRules, exclusionFor, icpByNumber, icpEntries, icpLabel, REGISTRY_VERSIONS } from "./registry";
 
 export type V2Classification = {
   icpNumber: number | null; // null = Not Core ICP
@@ -515,6 +515,27 @@ export async function classifyV2(
   }
 
   model = verdict.model || model;
+
+  // Registry exclusions, checked against evidence rather than trusted to the
+  // prompt. A residential brokerage reads exactly like a commercial one to a
+  // classifier that is only *told* to exclude it.
+  if (verdict.icpNumber !== null && research?.trim()) {
+    const excluded = exclusionFor(verdict.icpNumber, research);
+    if (excluded) {
+      warnings.push(`${icpLabel(verdict.icpNumber)} rejected by exclusion "${excluded.id}": ${excluded.reason}`);
+      return {
+        icpNumber: null,
+        label: icpLabel(null),
+        reasoning: excluded.reason,
+        path: input.title ? "titled" : "email_only",
+        usage,
+        warnings,
+        timings,
+        agreement,
+        model,
+      };
+    }
+  }
 
   // A gate that says "CONFIRMED" cannot be confirmed by absent evidence. On the
   // titled path a research failure was only a warning, so #11 could come back

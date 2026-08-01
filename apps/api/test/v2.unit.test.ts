@@ -14,6 +14,8 @@ import {
   icpByNumber,
   icpDescriptor,
   icpEntries,
+  exclusionChecks,
+  exclusionFor,
   icpLabel,
   isDeferred,
   useCasesFor,
@@ -437,6 +439,56 @@ describe("caller values entering the prompt", () => {
     assert.ok(!asFactValue("A\u0000B\u2028C").match(/[\u0000\u2028]/));
     assert.equal(asFactValue("x".repeat(500)).length, 200);
     assert.equal(asFactValue("  Padded  Name  "), "Padded Name");
+  });
+});
+
+describe("registry exclusions, checked rather than trusted (Phase D)", () => {
+  test("a residential brokerage is rejected from ICP #2", () => {
+    // Canonical fixture: "residential broker -> Not Core". Until this check
+    // existed it depended entirely on the model applying a rule it was told.
+    const evidence = "Acme Realty is a residential real estate brokerage serving home buyers and sellers.";
+    const hit = exclusionFor(2, evidence);
+    assert.ok(hit, "a residential brokerage must not pass as ICP #2");
+    assert.equal(hit!.id, "residential_real_estate");
+    // A commercial firm with the same shape of description still passes.
+    assert.equal(exclusionFor(2, "CBRE is the world's largest commercial real estate services firm."), null);
+  });
+
+  test("a VC newsletter operator is rejected from #19", () => {
+    const hit = exclusionFor(19, "Term Sheet is a media company covering venture and publishes a newsletter about startups.");
+    assert.ok(hit);
+    assert.equal(hit!.id, "vc_newsletter_operator");
+    assert.equal(exclusionFor(19, "Renegade Partners is an early-stage venture capital firm investing in startups."), null);
+  });
+
+  test("a public-market investor is rejected from #19 and #8", () => {
+    const ev = "Bridgewater is a hedge fund that invests in publicly traded securities.";
+    assert.ok(exclusionFor(19, ev), "#19 is startup VC, not public markets");
+    assert.ok(exclusionFor(8, ev), "#8 is growth equity, not public markets");
+    // A family office is explicitly allowed by #19's company definition.
+    assert.equal(exclusionFor(19, "A single-family office investing directly in early-stage startups."), null);
+  });
+
+  test("a local services business is rejected from #6", () => {
+    assert.ok(exclusionFor(6, "Wintergreen Landscaping provides landscaping services to homeowners."));
+    assert.equal(exclusionFor(6, "Fal is a venture-backed generative media infrastructure startup."), null);
+  });
+
+  test("exclusions read evidence only, and never fire on an empty one", () => {
+    // Reading caller fields would let a caller force a rejection by writing the
+    // right words into a company name — the mirror of the injection we block.
+    assert.equal(exclusionFor(2, ""), null);
+    assert.equal(exclusionFor(null, "residential real estate brokerage"), null);
+  });
+
+  test("every declared exclusion targets a real ICP and compiles", () => {
+    const checks = exclusionChecks();
+    assert.ok(checks.length >= 4, "the four cross-cutting exclusions should be declared");
+    const numbers = new Set(icpEntries().map((e) => e.number));
+    for (const c of checks) {
+      assert.ok(c.applies_to.every((n) => numbers.has(n)), `${c.id} targets a missing ICP`);
+      assert.ok(c.reason.length > 20, `${c.id} needs a reason a human can act on`);
+    }
   });
 });
 
