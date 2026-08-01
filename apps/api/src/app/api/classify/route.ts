@@ -39,7 +39,8 @@ import {
 } from "@fundable/shared";
 
 import { checkAuth, checkRateLimit } from "../../../lib/auth";
-import { classifyV2, CLASSIFIER_PROMPT_VERSION } from "../../../lib/v2/classify";
+import { CLASSIFIER_PROMPT_VERSION } from "../../../lib/v2/classify";
+import { classifyCached } from "../../../lib/v2/classify-cached";
 import { hubspotLabelFor } from "../../../lib/v2/hubspot";
 import { REGISTRY_VERSIONS } from "../../../lib/v2/registry";
 
@@ -126,7 +127,10 @@ export async function POST(req: Request): Promise<Response> {
 
   let result;
   try {
-    result = await classifyV2({ email, title, company, deadlineAt }, exa);
+    // Same cached decision the personalize route uses. Without this, the
+    // endpoint whose purpose is a consistent label re-voted on every call and
+    // could disagree with the other surface — and with itself.
+    result = await classifyCached({ email, title, company, deadlineAt }, exa);
   } catch (err) {
     // Infrastructure failure is a 502 the caller can retry — never a 200 with
     // a confident "Not Core ICP" they would persist (QA finding).
@@ -149,6 +153,7 @@ export async function POST(req: Request): Promise<Response> {
       reasoning: result.reasoning,
       path: result.path,
       agreement: result.agreement.total ? `${result.agreement.top}/${result.agreement.total}` : null,
+      classification: result.cacheState,
       inputs: { email, ...(title ? { title } : {}), ...(company ? { company } : {}) },
       model: result.model,
       warnings: [...warnings, ...result.warnings],
