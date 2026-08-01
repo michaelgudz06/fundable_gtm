@@ -2,7 +2,7 @@
   "//": "HARD-RULE FIXTURES — spec §6 'Rules and use cases', gate: 100% pass. These are NOT the gold set and must never be merged into it. A gold set measures ACCURACY and therefore needs labels a human chose; these measure ADHERENCE to rules the registry already states, so the expected answer is derivable from config/registry/icp_registry.json and authoring them here is legitimate. Scoring accuracy against fixtures I wrote myself would be grading my own homework.",
   "//companies": "The COMPANIES are real, deliberately. A gated ICP needs confirmable evidence, so an example.com lead would fail closed for want of research rather than because the rule fired — the fixture would pass for the wrong reason and prove nothing. The PEOPLE are synthetic (role@domain): the row tests a company gate and a role gate, not a person.",
   "//failures": "A failure here does not automatically mean the classifier is wrong. It may mean the expectation is wrong, or that the company changed. Read the reasoning before changing code.",
-  "version": "2",
+  "version": "3",
   "rows": [
     {
       "id": "gate-4-confirmed",
@@ -86,13 +86,13 @@
       "why": "#17 excludes BigLaw and enterprise/F500 focus explicitly."
     },
     {
-      "id": "gate-11-broad-market",
-      "rule": "startup_customers_required — a broad-market HR platform must fail closed",
-      "expect": "Not Core ICP",
+      "id": "gate-11-falls-through-to-20",
+      "rule": "a rejected specific ICP falls through to the #20 catch-all, not to Not Core",
+      "expect": "ICP #20: Startup GTM",
       "email": "growth@rippling.com",
       "title": "Head of Growth",
       "company": "Rippling",
-      "why": "Rippling sells to businesses of all sizes. 'HR platform' does not imply 'startup-focused', and the gate says never infer a customer base from industry. This fixture originally expected #11 and was wrong — the classifier's reasoning ('sells to businesses of all sizes, not exclusively startups/SMBs') is the gate working."
+      "why": "Two rules in sequence. #11's startup_customers_required gate is NOT confirmed — Rippling sells to businesses of all sizes, and industry never implies a customer base. But Rippling IS a venture-style tech startup and Head of Growth IS a GTM role, so #20 applies. Both of this fixture's earlier expectations (#11, then Not Core) were wrong; the classifier was right twice. The catch-all exists for exactly this."
     },
     {
       "id": "role-11-ineligible",
