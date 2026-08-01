@@ -20,6 +20,7 @@
  * up at the first undecided row.
  */
 
+import { execFile } from "node:child_process";
 import { readFileSync, writeFileSync, renameSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -98,6 +99,33 @@ function ruleFor(label: string): string[] {
   ];
 }
 
+/**
+ * Open a candidate's profile in the browser.
+ *
+ * The URL comes out of a data file, so it is validated rather than trusted:
+ * https only, and the host must actually be linkedin.com. Passing an
+ * unchecked string from a file straight to the shell is how a data file
+ * becomes an execution path — execFile with an argument array means the URL
+ * is never parsed by a shell, and the host check means a rewritten queue
+ * cannot send you somewhere else entirely.
+ */
+function openProfile(url: string | undefined): string {
+  if (!url) return dim("no profile on this row");
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return red("not a valid URL");
+  }
+  if (u.protocol !== "https:") return red(`refusing to open a non-https URL (${u.protocol})`);
+  if (u.hostname !== "linkedin.com" && !u.hostname.endsWith(".linkedin.com")) {
+    return red(`refusing to open a non-LinkedIn host (${u.hostname})`);
+  }
+  const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+  execFile(cmd, [u.toString()], () => {});
+  return dim(`opened ${u.hostname}${u.pathname}`);
+}
+
 function card(r: Row, idx: number, total: number, done: number): string {
   const person = [r.title, r.company ?? r.email.split("@")[1]].filter(Boolean).join("  ·  ");
   const lines = [
@@ -105,14 +133,24 @@ function card(r: Row, idx: number, total: number, done: number): string {
     `${dim(`row ${idx + 1} of ${total}`)}  ${dim("·")}  ${dim(`${done} decided`)}  ${dim("·")}  ${dim(r.id)}`,
     "",
     `  ${bold(person || r.email)}`,
-    `  ${dim(r.email)}${r.linkedin ? dim(`  ·  ${r.linkedin}`) : ""}`,
+    `  ${dim(r.email)}${r.linkedin ? `  ${dim("·")}  ${cyan(r.linkedin)} ${dim("[o]pen")}` : ""}`,
     "",
     `  ${dim("proposed")}  ${cyan(r.proposed_label)}   ${dim(`(${r.source})`)}`,
     "",
     ...ruleFor(r.proposed_label).map((l) => `  ${l}`),
     "",
     ...(r.boundary_for ? [`  ${dim("pins rule")} ${r.boundary_for}`, ""] : []),
-    ...(r.note ? [`  ${dim(wrap(r.note, 76).join("\n  " + dim("")))}`, ""] : []),
+    ...(r.note
+      ? [
+          // Labelled, not just printed. For a mined row this text is the
+          // classifier's own argument for its own answer, so reading it and
+          // approving would confirm that the reasoning is self-consistent —
+          // which it always is. It says what claim to check, not whether it holds.
+          `  ${dim(r.source === "authored" ? "why this row exists" : "the claim under test (not evidence)")}`,
+          ...wrap(r.note, 74).map((l) => `  ${dim(l)}`),
+          "",
+        ]
+      : []),
   ];
   return lines.join("\n");
 }
@@ -130,10 +168,37 @@ function wrap(s: string, w: number): string[] {
   return out;
 }
 
-/** Write via temp + rename so a crash mid-write cannot truncate the queue. */
-function save(q: Queue): void {
+/**
+ * Persist this session's decisions without clobbering anyone else's.
+ *
+ * The naive version — serialise the in-memory queue and write it — loses work
+ * whenever two instances overlap, because each one holds all 60 rows from the
+ * moment it started and rewrites the file wholesale. Second save wins, and the
+ * other terminal's decisions are gone with no error. That is not hypothetical:
+ * it happened during development, with a review already in progress.
+ *
+ * So a save re-reads the file and applies only the rows THIS session touched.
+ * Decisions made elsewhere survive, and the in-memory copy is refreshed from
+ * disk so the running tally stays honest. Temp-then-rename keeps a crash
+ * mid-write from truncating the file.
+ */
+function save(q: Queue, mine: Map<string, string>): void {
+  let disk: Queue;
+  try {
+    disk = JSON.parse(readFileSync(QUEUE, "utf8")) as Queue;
+  } catch {
+    disk = q;
+  }
+  const byId = new Map(q.rows.map((r) => [r.id, r]));
+  for (const r of disk.rows) {
+    const ours = mine.get(r.id);
+    if (ours !== undefined) r.decision = ours;
+    // Adopt everyone else's decisions so the tally and the resume point are real.
+    const local = byId.get(r.id);
+    if (local) local.decision = r.decision;
+  }
   const tmp = `${QUEUE}.tmp`;
-  writeFileSync(tmp, JSON.stringify(q, null, 2) + "\n");
+  writeFileSync(tmp, JSON.stringify(disk, null, 2) + "\n");
   renameSync(tmp, QUEUE);
 }
 
@@ -198,6 +263,7 @@ const HELP = [
   `  ${bold("a")} approve      the proposed label is correct`,
   `  ${bold("r")} reject       the person does not belong in the gold set at all`,
   `  ${bold("l")} relabel      correct label, chosen from the registry list`,
+  `  ${bold("o")} open         open the LinkedIn profile — the row's only independent evidence`,
   `  ${bold("s")} skip         leave undecided, come back later`,
   `  ${bold("u")} undo         reopen the previous row`,
   `  ${bold("q")} quit         save and exit — rerun resumes here`,
@@ -231,6 +297,8 @@ async function main() {
   const reviewAll = process.argv.includes("--all");
   process.stdout.write(`\n${bold("Gold-set review")} ${dim(`— ${rows.length} rows`)}\n${HELP}`);
 
+  /** Rows this session decided, so a save never overwrites another instance. */
+  const mine = new Map<string, string>();
   const history: number[] = [];
   let i = 0;
   while (i < rows.length) {
@@ -241,7 +309,7 @@ async function main() {
     }
     const t = tally(rows);
     process.stdout.write(card(r, i, rows.length, t.approve + t.reject + t.relabel));
-    process.stdout.write(`  ${dim("[a]pprove  [r]eject  re[l]abel  [s]kip  [u]ndo  [q]uit  [?]help")}  `);
+    process.stdout.write(`  ${dim("[a]pprove  [r]eject  re[l]abel  [o]pen  [s]kip  [u]ndo  [q]uit  [?]help")}  `);
 
     const k = (await key()).toLowerCase();
     process.stdout.write("\n");
@@ -261,8 +329,16 @@ async function main() {
         continue;
       }
       rows[prev]!.decision = "";
-      save(q);
+      mine.set(rows[prev]!.id, "");
+      save(q, mine);
       i = prev;
+      continue;
+    }
+    if (k === "o") {
+      // Deliberately does not advance. The profile is the only independent
+      // evidence a mined row carries; opening it is a step toward the decision,
+      // not the decision.
+      process.stdout.write(`  ${openProfile(r.linkedin)}\n`);
       continue;
     }
     if (k === "s") {
@@ -291,7 +367,8 @@ async function main() {
       continue;
     }
 
-    save(q);
+    mine.set(r.id, r.decision);
+    save(q, mine);
     history.push(i);
     i++;
   }
