@@ -1,20 +1,27 @@
 /**
- * Registry label -> HubSpot picklist option.
+ * Registry label -> HubSpot picklist INTERNAL NAME.
  *
- * These two numbering schemes are NOT the same, and assuming they were would
- * write the wrong segment onto real contacts. The registry preserves the
- * original numbering and has no #3; the HubSpot property was built as a plain
+ * VERIFIED against the live `ICP Segment` contact property on 2026-07-31, not
+ * inferred. That distinction matters: this table was originally carried over
+ * from a deleted Python port and nobody had compared it to the real property.
+ *
+ * A HubSpot write uses the internal name, never the label. The labels happen to
+ * be our exact output ("ICP #2: CRE Broker"), which is convenient for a human
+ * reading a contact record and irrelevant to the API call.
+ *
+ * The two numbering schemes are NOT the same. The registry preserves the
+ * original numbering and has no #3; the property's internal names are a plain
  * sequential list, so everything from Startup Banking onward is off by one:
  *
  *     registry #4  Startup Banking          ->  "3 - Startup Banking"
  *     registry #6  Founder                  ->  "5 - Founder"
  *     registry #18 Startup Marketing & PR   ->  "17 - Startup Marketing & PR Agency"
  *
- * Two labels have no option at all. #19 Investor and #20 Startup GTM are v2
- * additions — #19 in particular REVERSES the v1 rule that investors are Not
- * Core — and the property predates both. Rather than guess, those return null
- * with a status the caller can branch on: writing "Not Core ICP" for an
- * investor would silently re-apply the exact rule v2 overturned.
+ * And then the two v2 additions each break the sequence in their own way —
+ * which is precisely why guessing them was never safe:
+ *
+ *     registry #19 Investor      ->  "Investor"           (no numeric prefix at all)
+ *     registry #20 Startup GTM   ->  "20 - Startup GTM"   (registry number, not sequential 19)
  */
 
 import { icpByNumber, icpEntries } from "./registry";
@@ -38,13 +45,20 @@ const HUBSPOT_OPTION: Record<number, string> = {
   16: "15 - Other Startup Agency",
   17: "16 - Startup Legal Services",
   18: "17 - Startup Marketing & PR Agency",
+  // The two that break the pattern. Verified from the property, not derived.
+  19: "Investor",
+  20: "20 - Startup GTM",
 };
 
-/** Labels that need a new option added to the HubSpot property before they can be written. */
-export const PENDING_HUBSPOT_OPTIONS: Record<number, string> = {
-  19: "18 - Investor",
-  20: "19 - Startup GTM",
-};
+/**
+ * Labels with no option in the property yet.
+ *
+ * Empty as of the 2026-07-31 verification — every registry label is writable.
+ * The mechanism stays because the next ICP added to the registry will land here
+ * rather than being silently unwritable, and the build check below enforces
+ * that a new label is either mapped or deliberately listed.
+ */
+export const PENDING_HUBSPOT_OPTIONS: Record<number, string> = {};
 
 export const NOT_CORE_OPTION = "Not Core ICP";
 

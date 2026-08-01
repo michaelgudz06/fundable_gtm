@@ -21,7 +21,7 @@ import {
   useCasesFor,
 } from "../src/lib/v2/registry";
 import { asCompanyName, asFactValue, buildClassifierPrompt, researchTarget } from "../src/lib/v2/classify";
-import { PENDING_HUBSPOT_OPTIONS, hubspotLabelFor } from "../src/lib/v2/hubspot";
+import { NOT_CORE_OPTION, PENDING_HUBSPOT_OPTIONS, hubspotLabelFor } from "../src/lib/v2/hubspot";
 import {
   articleFor,
   composeFromTemplate,
@@ -493,10 +493,16 @@ describe("registry exclusions, checked rather than trusted (Phase D)", () => {
 });
 
 describe("HubSpot picklist mapping (Phase C)", () => {
+  // Every string below was read off the live `ICP Segment` contact property on
+  // 2026-07-31. They are transcription, not derivation — which is the point.
+  // The table was inherited from a deleted Python port and had never been
+  // compared to the real property.
+
   test("the mapping is explicit, because the two numbering schemes diverge", () => {
-    // The registry has no #3; the HubSpot property is a plain sequential list.
-    // Everything from Startup Banking onward is therefore off by one, and
-    // assuming they matched would write the wrong segment onto real contacts.
+    // The registry has no #3; the property's internal names are a plain
+    // sequential list. Everything from Startup Banking onward is therefore off
+    // by one, and assuming they matched would write the wrong segment onto real
+    // contacts.
     assert.equal(hubspotLabelFor(2).value, "2 - CRE Broker");
     assert.equal(hubspotLabelFor(4).value, "3 - Startup Banking");
     assert.equal(hubspotLabelFor(6).value, "5 - Founder");
@@ -504,25 +510,52 @@ describe("HubSpot picklist mapping (Phase C)", () => {
     assert.equal(hubspotLabelFor(null).value, "Not Core ICP");
   });
 
-  test("a label with no property option refuses rather than guessing", () => {
-    // Falling back to "Not Core ICP" for an investor would re-apply the exact
-    // v1 rule that #19 reverses — silently, onto a real contact record.
-    for (const n of [19, 20]) {
-      const l = hubspotLabelFor(n);
-      assert.equal(l.status, "missing_property_option", `#${n}`);
-      assert.equal(l.value, null, `#${n} must not invent an option`);
-      assert.ok(l.status === "missing_property_option" && l.proposed, `#${n} should propose one`);
-    }
+  test("the two v2 additions each break the sequence, in different ways", () => {
+    // Guessing these was never safe, and the guess was in fact wrong on both
+    // counts: the plausible-looking "18 - Investor" / "19 - Startup GTM" would
+    // have failed to write. #19 carries no numeric prefix at all, and #20 uses
+    // its registry number rather than the next sequential slot.
+    assert.equal(hubspotLabelFor(19).value, "Investor");
+    assert.equal(hubspotLabelFor(20).value, "20 - Startup GTM");
+    assert.equal(hubspotLabelFor(19).status, "ok");
+    assert.equal(hubspotLabelFor(20).status, "ok");
   });
 
-  test("every registry label is either mapped or explicitly pending", () => {
-    // The module throws at import if this is violated, so reaching this
-    // assertion at all is most of the proof; this pins the intent.
+  test("an unmapped label refuses rather than guessing", () => {
+    // Nothing is unmapped today, so this exercises the mechanism with a number
+    // the registry does not define. The behaviour has to survive: falling back
+    // to "Not Core ICP" for a future ICP would silently mislabel real contacts,
+    // exactly as it would have for an investor before #19 existed.
+    const l = hubspotLabelFor(999);
+    assert.equal(l.status, "missing_property_option");
+    assert.equal(l.value, null, "must not invent an option");
+    assert.ok(l.status === "missing_property_option" && l.proposed, "should propose one");
+  });
+
+  test("every registry label is mapped — nothing is pending", () => {
+    // The module throws at import if a registry label is neither mapped nor
+    // listed as pending, so reaching this assertion at all is most of the
+    // proof; this pins the intent.
     for (const e of icpEntries()) {
       const l = hubspotLabelFor(e.number);
-      assert.ok(l.value !== undefined, `#${e.number}`);
+      assert.equal(l.status, "ok", `#${e.number} ${e.name} is not writable`);
+      assert.ok(typeof l.value === "string" && l.value.length > 0, `#${e.number}`);
     }
-    assert.deepEqual(Object.keys(PENDING_HUBSPOT_OPTIONS).sort(), ["19", "20"]);
+    assert.deepEqual(Object.keys(PENDING_HUBSPOT_OPTIONS), []);
+  });
+
+  test("no two registry labels share a HubSpot option", () => {
+    // A duplicate would silently merge two segments in every downstream report
+    // and no single-label test would catch it.
+    const seen = new Map<string, number>();
+    for (const e of icpEntries()) {
+      const v = hubspotLabelFor(e.number).value;
+      if (v === null) continue;
+      const prior = seen.get(v);
+      assert.equal(prior, undefined, `#${e.number} and #${prior} both map to "${v}"`);
+      seen.set(v, e.number);
+    }
+    assert.ok(!seen.has(NOT_CORE_OPTION), "a core ICP must never map to the Not Core option");
   });
 });
 
