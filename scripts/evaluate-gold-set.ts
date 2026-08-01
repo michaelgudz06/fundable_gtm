@@ -40,7 +40,14 @@ function loadEnv(): Record<string, string> {
 const env = loadEnv();
 const arg = (n: string, d?: string) => {
   const i = process.argv.indexOf(`--${n}`);
-  return i >= 0 ? process.argv[i + 1] : d;
+  if (i < 0) return d;
+  const v = process.argv[i + 1];
+  // A flag used as a bare switch (`--approve`) has no value after it, and
+  // returning undefined there is how `--approve` came to crash with an opaque
+  // EISDIR: resolve(undefined ?? "") is the CWD, and readFileSync on a
+  // directory throws. Fall back to the default instead. The `--` guard stops
+  // the next FLAG being eaten as this one's value.
+  return v !== undefined && !v.startsWith("--") ? v : d;
 };
 const BASE = (arg("base", "https://personalize-api-umber.vercel.app") ?? "").replace(/\/$/, "");
 const KEY = env.PERSONALIZE_API_KEY ?? "";
