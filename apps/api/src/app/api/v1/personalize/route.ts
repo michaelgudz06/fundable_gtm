@@ -95,6 +95,90 @@ type RequestBody = {
   additional_context?: Record<string, unknown>;
 };
 
+/**
+ * One row per request, for the metrics the spec asks for and nothing emitted:
+ * label distribution, Not Core rate, cache hit rate, output-validation failures,
+ * latency, cost, and which registry versions produced the answer.
+ *
+ * Deliberately PII-minimised. The legacy pipeline writes person_email and the
+ * full body into this same table; this route writes NEITHER. What a metric needs
+ * is the shape of the decision, not who it was about — and a log that answers
+ * "what is our Not Core rate this week" without storing a single address is
+ * strictly better than one that cannot be shared.
+ */
+async function record(
+  storage: ReturnType<typeof getStorage>,
+  keyHash: string,
+  fields: {
+    messageType: string;
+    status: string;
+    icp: string | null;
+    trace: Trace;
+    handlerMs: number;
+    fundableCredits: number;
+    exaUsd: number;
+    llmTokens: number;
+    warnings: string[];
+    validationIssues: unknown[];
+  }
+): Promise<void> {
+  try {
+    await storage.log({
+      api_key_hash: keyHash,
+      trigger: fields.messageType,
+      channel: "v1/personalize",
+      // PII columns stay null on this route. See the note above.
+      person_email: null,
+      person_linkedin: null,
+      person_name: null,
+      sender_context: null,
+      max_facts: 0,
+      template_provided: fields.trace.bodySource === "caller_template",
+      company_id: null,
+      company_name: null,
+      company_domain: null,
+      person_id: null,
+      status: fields.status,
+      confidence: null,
+      angle: fields.icp,
+      subject: null,
+      body: null,
+      evidence: [
+        {
+          registry: REGISTRY_VERSIONS.icp_registry,
+          use_cases: REGISTRY_VERSIONS.use_case_catalog,
+          templates: REGISTRY_VERSIONS.template_catalog,
+          claims: REGISTRY_VERSIONS.approved_claims,
+          prompt: CLASSIFIER_PROMPT_VERSION,
+          model_requested: MODEL_PLAN,
+          model_served: fields.trace.modelServed || null,
+          classification: fields.trace.classification,
+          agreement: fields.trace.agreement || null,
+          body_source: fields.trace.bodySource,
+          use_case_type: fields.trace.useCaseType,
+          stage_ms: {
+            identity: fields.trace.identity,
+            research: fields.trace.research,
+            model: fields.trace.model,
+          },
+        },
+      ],
+      warnings: fields.warnings,
+      verify_issues: fields.validationIssues.length ? fields.validationIssues : null,
+      verify_retried: false,
+      fundable_credits: fields.fundableCredits,
+      exa_cost_usd: Number(fields.exaUsd.toFixed(6)),
+      llm_tokens: fields.llmTokens,
+      latency_ms: fields.handlerMs,
+      voice_id: null,
+      voice_provenance: null,
+    });
+  } catch {
+    // Telemetry must never fail a send. A dropped metric is a worse day than a
+    // dropped email only for us.
+  }
+}
+
 /** Per-leg upstream timings, reported on every response as X-Stage-Ms. */
 type Trace = {
   identity: number;
@@ -212,6 +296,7 @@ export async function POST(req: Request): Promise<Response> {
 }
 
 async function handle(req: Request, trace: Trace): Promise<Response> {
+  const handlerStarted = Date.now();
   const auth = checkAuth(req);
   if (!auth.ok) return err(auth.status, auth.status === 401 ? "UNAUTHORIZED" : "NOT_CONFIGURED", auth.message);
   const rate = checkRateLimit(auth.keyHash);
@@ -496,6 +581,19 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
     if (idemKey) {
       await storage.cacheSet(idempotencyKey(idemKey), "fundable", success, IDEMPOTENCY_TTL_MS);
     }
+
+    await record(storage, auth.keyHash, {
+      messageType,
+      status: "ok",
+      icp: cls.label,
+      trace,
+      handlerMs: Date.now() - handlerStarted,
+      fundableCredits: fundable.credits,
+      exaUsd: exa.usd,
+      llmTokens: cls.usage.reduce((n, u) => n + (u.totalTokens ?? 0), 0),
+      warnings: cls.warnings,
+      validationIssues: [],
+    });
 
     return Response.json(success, { headers: versionHeaders() });
   } catch (e) {
