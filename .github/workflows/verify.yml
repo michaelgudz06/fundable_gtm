@@ -1,0 +1,37 @@
+# Nothing ran on push before this file existed, so every "100% pass" gate in the
+# spec was enforced by remembering to run it. These three are the offline ones —
+# they need no keys and no deployment, so they can gate a merge.
+#
+# The live suites (contract-check, run-testset, evaluate-gold-set) are NOT here
+# on purpose: they cost real upstream spend and need a deployed instance. They
+# run against a deployment, not against a pull request.
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # Type-checks every workspace. The root tsconfig only referenced
+      # packages/fundable-shared for a while, which let three type errors reach
+      # a production build before anything noticed.
+      - run: npm run typecheck
+
+      # 121 offline tests. Several encode a specific way this pipeline could put
+      # a wrong claim in front of a real person; a failure here is a removed guard.
+      - run: npm test
+
+      # The registries validate at module load, so a malformed registry fails
+      # THIS step rather than a request in production.
+      - run: npm run build

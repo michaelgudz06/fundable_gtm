@@ -40,3 +40,8 @@ yarn-error.log*
 # test-set run output: real generated copy for real named leads. The committed
 # artefact is docs/TESTSET.md, not the raw bodies.
 /test-runs
+
+# Gold-set review queue: mined candidates carry real third-party addresses and
+# nobody has approved them yet. The approved set (config/eval/gold_set.json) IS
+# committed — it is the evaluation record, and it must survive a clone.
+/config/eval/review_queue.json
