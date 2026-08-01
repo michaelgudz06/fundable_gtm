@@ -11,6 +11,11 @@
  * that also gets a title, so the false-positive rate is measured on equal terms
  * rather than only the accept path being helped.
  *
+ * SUPERSEDED, 2026-08-01: scraping titles out of reasoning prose was never
+ * necessary. The export carries a real Title column (78.8% filled); use
+ * scripts/benchmark-real-titles.ts, which reads it directly and runs a paired
+ * bare/titled comparison on identical rows.
+ *
  * HONEST CAVEAT, and it matters: the titles are extracted from the reference
  * classifier's own reasoning text. That is the title it had in hand when it
  * chose the label, so this measures an UPPER BOUND — a real vendor may return a

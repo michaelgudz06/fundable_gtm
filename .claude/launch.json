@@ -4,7 +4,19 @@
     {
       "name": "personalize-api",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 3111
+    },
+    {
+      "name": "personalize-api-bench",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:bench"
+      ],
       "port": 3111
     }
   ]
