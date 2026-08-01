@@ -1,0 +1,198 @@
+{
+  "//": "HARD-RULE FIXTURES — spec §6 'Rules and use cases', gate: 100% pass. These are NOT the gold set and must never be merged into it. A gold set measures ACCURACY and therefore needs labels a human chose; these measure ADHERENCE to rules the registry already states, so the expected answer is derivable from config/registry/icp_registry.json and authoring them here is legitimate. Scoring accuracy against fixtures I wrote myself would be grading my own homework.",
+  "//companies": "The COMPANIES are real, deliberately. A gated ICP needs confirmable evidence, so an example.com lead would fail closed for want of research rather than because the rule fired — the fixture would pass for the wrong reason and prove nothing. The PEOPLE are synthetic (role@domain): the row tests a company gate and a role gate, not a person.",
+  "//failures": "A failure here does not automatically mean the classifier is wrong. It may mean the expectation is wrong, or that the company changed. Read the reasoning before changing code.",
+  "version": "2",
+  "rows": [
+    {
+      "id": "gate-4-confirmed",
+      "rule": "startup_customers_required — confirmed side",
+      "expect": "ICP #4: Startup Banking",
+      "email": "ae@mercury.com",
+      "title": "Account Executive",
+      "company": "Mercury",
+      "why": "Mercury's customer base is startups; the spec names it as the confirming example."
+    },
+    {
+      "id": "gate-4-unconfirmed",
+      "rule": "startup_customers_required — unconfirmed must fail closed",
+      "expect": "Not Core ICP",
+      "email": "ae@chase.com",
+      "title": "Account Executive",
+      "company": "JPMorgan Chase",
+      "why": "A large diversified bank. Industry alone must never satisfy the gate."
+    },
+    {
+      "id": "gate-10-confirmed",
+      "rule": "startup_customers_required — cross-border, confirmed",
+      "expect": "ICP #10: Cross-Border Payments",
+      "email": "ae@airwallex.com",
+      "title": "Account Executive",
+      "company": "Airwallex",
+      "why": "Cross-border payments product whose customer base includes startups."
+    },
+    {
+      "id": "gate-10-unconfirmed",
+      "rule": "startup_customers_required — cross-border, unconfirmed",
+      "expect": "Not Core ICP",
+      "email": "ae@westernunion.com",
+      "title": "Account Executive",
+      "company": "Western Union",
+      "why": "Cross-border payments, but consumer remittance — not a startup customer base."
+    },
+    {
+      "id": "gate-13-confirmed",
+      "rule": "startup_customers_required — compliance, confirmed",
+      "expect": "ICP #13: Startup Compliance",
+      "email": "ae@vanta.com",
+      "title": "Account Executive",
+      "company": "Vanta",
+      "why": "SOC2 compliance sold predominantly to startups."
+    },
+    {
+      "id": "gate-13-unconfirmed",
+      "rule": "startup_customers_required — compliance, unconfirmed",
+      "expect": "Not Core ICP",
+      "email": "ae@deloitte.com",
+      "title": "Account Executive",
+      "company": "Deloitte",
+      "why": "Compliance services, enterprise customer base."
+    },
+    {
+      "id": "gate-15-confirmed",
+      "rule": "startup_customers_required — accounting, confirmed",
+      "expect": "ICP #15: Startup Accounting",
+      "email": "ae@pilot.com",
+      "title": "Account Executive",
+      "company": "Pilot",
+      "why": "The spec names Pilot as the confirming example for startup accounting."
+    },
+    {
+      "id": "gate-17-startup-focus",
+      "rule": "startup_focus gate — legal, confirmed",
+      "expect": "ICP #17: Startup Legal Services",
+      "email": "ae@clerky.com",
+      "title": "Account Executive",
+      "company": "Clerky",
+      "why": "Legal paperwork product built specifically for startups."
+    },
+    {
+      "id": "gate-17-biglaw",
+      "rule": "startup_focus gate — BigLaw must fail closed",
+      "expect": "Not Core ICP",
+      "email": "bd@lw.com",
+      "title": "Business Development Manager",
+      "company": "Latham & Watkins",
+      "why": "#17 excludes BigLaw and enterprise/F500 focus explicitly."
+    },
+    {
+      "id": "gate-11-broad-market",
+      "rule": "startup_customers_required — a broad-market HR platform must fail closed",
+      "expect": "Not Core ICP",
+      "email": "growth@rippling.com",
+      "title": "Head of Growth",
+      "company": "Rippling",
+      "why": "Rippling sells to businesses of all sizes. 'HR platform' does not imply 'startup-focused', and the gate says never infer a customer base from industry. This fixture originally expected #11 and was wrong — the classifier's reasoning ('sells to businesses of all sizes, not exclusively startups/SMBs') is the gate working."
+    },
+    {
+      "id": "role-11-ineligible",
+      "rule": "role gate — wrong function at the right company",
+      "expect": "Not Core ICP",
+      "email": "eng@rippling.com",
+      "title": "Senior Software Engineer",
+      "company": "Rippling",
+      "why": "#11 lists AE/BDR/SDR/Growth. An engineer at the same company is not eligible."
+    },
+    {
+      "id": "role-9-product",
+      "rule": "#6 vs #9 precedence is UNDEFINED in the registry — records current behaviour",
+      "expect": "ICP #6: Founder",
+      "email": "cto@clay.com",
+      "title": "CTO",
+      "company": "Clay",
+      "why": "OPEN TAXONOMY QUESTION for Jacob. A founder/CTO of a company whose product consumes startup data matches #6 (Founder at a venture-style startup) AND #9 (Startup Data Customer, product/engineering roles). The registry states precedence only for #20, so neither is wrong today. This row pins CURRENT behaviour so a future change is visible; it is not an assertion that #6 is the right answer."
+    },
+    {
+      "id": "role-9-sales-is-not-9-but-5",
+      "rule": "#9 excludes GTM roles; a specific ICP still beats the #20 catch-all",
+      "expect": "ICP #5: Enterprise AE Selling to Startups",
+      "email": "ae@clay.com",
+      "title": "Account Executive",
+      "company": "Clay",
+      "why": "Same company as the #9 fixture, GTM role. #9 is out (product/engineering only), but #5 fits — Clay's primary customer base is confirmed startups/SMBs and the role is AE. This fixture originally expected #20 and was wrong: #20 applies ONLY when no specific ICP fits."
+    },
+    {
+      "id": "founder-venture",
+      "rule": "#6 requires a venture-style startup",
+      "expect": "ICP #6: Founder",
+      "email": "founder@fal.ai",
+      "title": "Co-Founder & CEO",
+      "company": "Fal",
+      "why": "Venture-backed technical startup."
+    },
+    {
+      "id": "exclusion-residential",
+      "rule": "residential real estate excluded outright",
+      "expect": "Not Core ICP",
+      "email": "broker@compass.com",
+      "title": "Real Estate Broker",
+      "company": "Compass",
+      "why": "#2 is commercial only; the registry excludes residential."
+    },
+    {
+      "id": "exclusion-public-market",
+      "rule": "public-market investors excluded outright",
+      "expect": "Not Core ICP",
+      "email": "pm@bridgewater.com",
+      "title": "Portfolio Manager",
+      "company": "Bridgewater Associates",
+      "why": "#19 is startup VC, angel networks and family offices — not public markets."
+    },
+    {
+      "id": "investor-core",
+      "rule": "#19 is core in v2, reversing the v1 VC exclusion",
+      "expect": "ICP #19: Investor",
+      "email": "partner@a16z.com",
+      "title": "General Partner",
+      "company": "Andreessen Horowitz",
+      "why": "The single most important behaviour change between v1 and v2."
+    },
+    {
+      "id": "investor-wrong-role",
+      "rule": "#19 role gate — non-investing staff at a fund",
+      "expect": "Not Core ICP",
+      "email": "recruiting@a16z.com",
+      "title": "Recruiting Coordinator",
+      "company": "Andreessen Horowitz",
+      "why": "The registry lists investing-team roles; fund back-office is excluded."
+    },
+    {
+      "id": "cre-commercial",
+      "rule": "#2 producer ladder at a commercial firm",
+      "expect": "ICP #2: CRE Broker",
+      "email": "evp@cbre.com",
+      "title": "Executive Vice President",
+      "company": "CBRE",
+      "why": "The CRE producer ladder counts at every rank — this is the fix that moved recall 1/15 to 8/15."
+    },
+    {
+      "id": "cre-non-producer",
+      "rule": "#2 default-deny — a seniority token alone is not enough",
+      "expect": "Not Core ICP",
+      "email": "it@cbre.com",
+      "title": "Director of Information Technology",
+      "company": "CBRE",
+      "why": "Right company, named non-deal function. The default-deny wording exists for exactly this."
+    },
+    {
+      "id": "freemail-no-title",
+      "rule": "personal address with no title fails closed",
+      "expect": "Not Core ICP",
+      "email": "someone.random@gmail.com",
+      "why": "A personal mailbox carries no company signal; guessing is how a wrong ICP reaches a human."
+    }
+  ],
+  "//open_questions": [
+    "#6 Founder vs #9 Startup Data Customer: a technical founder of a startup-data company matches both and the registry declares no precedence. Currently resolves to #6."
+  ]
+}

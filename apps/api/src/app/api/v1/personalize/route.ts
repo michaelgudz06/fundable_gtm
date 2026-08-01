@@ -26,13 +26,8 @@ import {
 
 import { checkAuth, checkRateLimit } from "../../../../lib/auth";
 import { getStorage } from "../../../../lib/storage";
-import {
-  classifyV2,
-  researchTarget,
-  startResearch,
-  CLASSIFIER_DECISION_VERSION,
-  CLASSIFIER_PROMPT_VERSION,
-} from "../../../../lib/v2/classify";
+import { researchTarget, startResearch, CLASSIFIER_PROMPT_VERSION } from "../../../../lib/v2/classify";
+import { classifyCached, registryFingerprint } from "../../../../lib/v2/classify-cached";
 import {
   composeFromTemplate,
   composeNotCore,
@@ -196,61 +191,9 @@ type Trace = {
   useCaseType: string;
 };
 
-/**
- * Every version that can change an answer, in one string.
- *
- * A key carrying only the ICP registry left four other levers unversioned: swap
- * the model, reword the research question, or edit the use-case, template or
- * claims catalogs, and 30 days of cached verdicts keep being served as if
- * nothing moved.
- */
-function idempotencyKey(callerKey: string): string {
-  // Versioned so a registry bump mid-flight cannot replay a body composed under
-  // the old catalog while the response advertises the new versions.
-  return `idem:${registryFingerprint()}:${callerKey}`;
-}
-
-function registryFingerprint(): string {
-  return [
-    REGISTRY_VERSIONS.icp_registry,
-    REGISTRY_VERSIONS.use_case_catalog,
-    REGISTRY_VERSIONS.template_catalog,
-    REGISTRY_VERSIONS.approved_claims,
-    MODEL_PLAN,
-  ].join("|");
-}
-
 /** Fundable's own TTL for person records elsewhere in this codebase. */
 const PERSON_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-const CLASSIFICATION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-/**
- * "Same normalized identity -> same label on every caller" is the first line of
- * the spec's acceptance criteria, and it cannot be delegated to the model:
- * measured, the same borderline lead classified differently on consecutive
- * identical calls. Removing the racing hedge narrows that, but a language model
- * is not a pure function and no prompt makes it one.
- *
- * So the guarantee is structural. The label is cached against the evidence that
- * produced it, and the key carries the registry and prompt versions — change a
- * definition and every affected lead is reclassified; change nothing and the
- * answer never drifts.
- */
-function classificationKey(input: {
-  email: string;
-  title?: string | undefined;
-  company?: string | undefined;
-  companyDomain?: string | undefined;
-}): string {
-  const material = [
-    normalizeEmail(input.email),
-    (input.title ?? "").trim().toLowerCase(),
-    (input.company ?? "").trim().toLowerCase(),
-    (input.companyDomain ?? "").trim().toLowerCase(),
-  ].join("|");
-  const digest = createHash("sha256").update(material).digest("hex").slice(0, 32);
-  return `cls:${registryFingerprint()}:${CLASSIFIER_DECISION_VERSION}:${digest}`;
-}
 
 /**
  * Identity lookups are cached because the upstream endpoint is slow on a cold
@@ -353,7 +296,7 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
   const storage = getStorage();
   const idemKey = req.headers.get("idempotency-key")?.trim();
   if (idemKey) {
-    const cached = (await storage.cacheGet(idempotencyKey(idemKey), "fundable")) as Record<string, unknown> | null;
+    const cached = (await storage.cacheGet(`idem:${registryFingerprint()}:${idemKey}`, "fundable")) as Record<string, unknown> | null;
     if (cached) {
       const canonical = {
         icp: cached.icp,
@@ -433,40 +376,11 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
     // It never overrides a corporate email domain and never participates in the
     // identity check; it exists so a lead with a personal address is still
     // researchable instead of failing closed for want of a lookup.
-    const clsKey = classificationKey({ email, title, company, companyDomain: researchDomain });
-    const cachedCls = (await storage.cacheGet(clsKey, "fundable")) as
-      | { icpNumber: number | null; label: string; agreementTop?: number; agreementTotal?: number }
-      | null;
-
-    let cls: Awaited<ReturnType<typeof classifyV2>>;
-    if (cachedCls && typeof cachedCls.label === "string") {
-      cls = {
-        icpNumber: cachedCls.icpNumber ?? null,
-        label: cachedCls.label,
-        reasoning: "cached",
-        path: "titled",
-        usage: [],
-        warnings: [],
-        timings: { research: 0, model: 0 },
-        agreement: { top: cachedCls.agreementTop ?? 0, total: cachedCls.agreementTotal ?? 0 },
-        model: "",
-      };
-      trace.classification = "cached";
-    } else {
-      cls = await classifyV2({ email, title, company, companyDomain: researchDomain, researchTask, deadlineAt }, exa);
-      await storage.cacheSet(
-        clsKey,
-        "fundable",
-        {
-          icpNumber: cls.icpNumber,
-          label: cls.label,
-          agreementTop: cls.agreement.top,
-          agreementTotal: cls.agreement.total,
-        },
-        CLASSIFICATION_TTL_MS
-      );
-      trace.classification = "fresh";
-    }
+    const cls = await classifyCached(
+      { email, title, company, companyDomain: researchDomain, researchTask, deadlineAt },
+      exa
+    );
+    trace.classification = cls.cacheState;
     trace.research = cls.timings.research;
     trace.model = cls.timings.model;
     if (cls.agreement.total) trace.agreement = `${cls.agreement.top}/${cls.agreement.total}`;
@@ -579,7 +493,7 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
     };
 
     if (idemKey) {
-      await storage.cacheSet(idempotencyKey(idemKey), "fundable", success, IDEMPOTENCY_TTL_MS);
+      await storage.cacheSet(`idem:${registryFingerprint()}:${idemKey}`, "fundable", success, IDEMPOTENCY_TTL_MS);
     }
 
     await record(storage, auth.keyHash, {
