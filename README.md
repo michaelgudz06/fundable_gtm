@@ -1,171 +1,129 @@
-# Fundable Personalization API
+# Fundable ICP Personalization API
 
-> "An alert saying 'Company X raised $10M' is a helpful signal… But on its own, it
-> isn't enough to make good outbound. The context is helpful, but you still have
-> to connect the dots to write a solid message, which takes time. So we've been
-> giving customers a Claude skill that fixes the last step."
-> — Jacob Klionsky, 2026-07-09
+One decision layer for signup, website visitors, Resend follow-ups and cold
+outbound: identity in, one ICP + up to three use cases + one plain-text email
+body out. It sends nothing. Built to [`docs/SPEC-v2.md`](docs/SPEC-v2.md).
 
-**This is that skill as an endpoint.** One POST: person + reason for writing in,
-copy + the evidence behind every claim out. It sends nothing.
-
-Built by Michael Gudz. Internal tooling, Jacob's voice only.
+Live: `https://personalize-api-umber.vercel.app` · built by Michael Gudz.
 
 ---
 
-## Run it
+## The contract
 
-```bash
-git clone <this repo> && cd personalize-api
-npm install
-cp .env.example .env     # then fill in the five keys
-npm run dev              # http://localhost:3111
 ```
-
-Three pages: **`/`** overview + live dependency health · **`/guide`** the full
-operator guide · **`/demo`** the live tool.
-
-```bash
-npm test                 # 67 offline tests, no keys needed
-npm run verify:supabase  # checks the cache/log tables and their RLS
-```
-
-## Call it
-
-```bash
-curl -s -X POST http://localhost:3111/api/personalize \
-  -H "Authorization: Bearer $PERSONALIZE_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"person":{"email":"eric@ramp.com"},"trigger":"post-raise","channel":"email","max_facts":3}'
+POST /api/v1/personalize      Authorization: Bearer <PERSONALIZE_API_KEY>
 ```
 
 ```jsonc
 {
-  "status": "personalized",          // personalized | template_only | no_match
-  "confidence": 0.9,                 // gate your sequencer on >= 0.5
-  "subject": "ramp's $750m series f",
-  "body": "Hi Eric,\n\nRamp raised a $750M Series F…",
-  "angle": "the_raise",              // log this — reply-rate-by-angle later
-  "evidence": [ { "fact": "…", "source": "fundable", "endpoint": "/companies", "confidence": 1 } ],
-  "warnings": [ … ],                 // always surface these to the reviewer
-  "usage": { "fundable_credits": 2, "exa_cost_usd": 0, "llm_tokens": 1707, "ms": 4200 }
+  "email": "reed@example-cre.com",
+  "linkedin_url": "https://www.linkedin.com/in/...",
+  "message_type": "website_visitor",         // | signup_paid | signup_unpaid | cold_outbound | nurture
+  "template_id": "website_visitor_use_case", // XOR email_template
+  "known_fields": {
+    "first_name": "Reed",
+    "title": "VP, Investment Sales",         // the field that decides whether this works
+    "company_name": "Example CRE",
+    "company_domain": "example-cre.com"      // used when the address is personal
+  },
+  "additional_context": {
+    "sender_name": "Jacob",
+    "territory": "Bay Area",
+    "target_buyer_role": "COO",
+    "product_context": "what you sell",       // required by ICP #5, #16, #20
+    "investor_connection": true               // required for relationship_leverage
+  }
 }
 ```
 
-`POST /api/personalize/stream` returns the same thing as NDJSON, one stage event
-per line, for the demo's live view. `GET /api/health` is unauthenticated and makes
-no paid calls.
+Success is **exactly three keys** — `icp`, `icp_use_cases`, `email_body`.
+`Not Core ICP` returns an empty use-case list and the approved generic body,
+never an error.
+
+### Headers worth logging
+
+| header | why |
+|---|---|
+| `X-Icp-Registry-Version` + 3 more | pins an answer to the data that produced it |
+| `X-Body-Source` | `caller_template` \| `catalog_template` \| `generic_fallback` — a Not Core lead silently gets the generic even if you supplied your own template |
+| `X-Classifier-Agreement` | `3/3` or `2/3` — route `2/3` to human review |
+| `X-Classification` | `fresh` \| `cached` |
+| `X-Use-Case-Type` | `alert` \| `mcp` \| `deferred` \| `none` |
+| `X-Handler-Ms`, `X-Stage-Ms` | our time vs the platform's, and which upstream leg spent it |
+
+### Which errors are verdicts
+
+| status | do |
+|---|---|
+| `409 IDENTITY_CONFLICT` | **stop** — do not fall back to generic, you don't know who this is |
+| `400` / `422` | your request or template is wrong; retrying won't help |
+| `502` | a dependency failed. **Not** a classification. Retry with backoff |
+| `429` | back off; `Retry-After` is set |
+
+Also: `POST /api/classify` — same registry, but returns the reasoning, the path
+taken, and the HubSpot picklist value.
 
 ---
 
-## What it does
+## Running it
 
-Four triggers, each a different claim about *why* you're writing — so each is
-allowed different evidence. All four live.
+```bash
+npm run verify     # typecheck every workspace + 121 offline tests + build
+npm test           # offline only
+npm run dev        # localhost:3111
+```
 
-| Trigger | Fires on | Notable |
-| --- | --- | --- |
-| `post-raise` | Fundable deal alert | Only one that penalizes a stale raise (>18mo) |
-| `cold` | Outbound sequence / list | Leads with a computed tie; a shared investor beats everything |
-| `sign-up` | Product sign-up | No pitch, no Exa spend; refuses internal/test identities |
-| `website-visitor` | Reverse-IP / form fill | **Cannot name a person at all** — opens "Hi," by design |
+Live suites (need a deployment and real upstream spend):
 
-Six stages, five of them deterministic:
+```bash
+npx tsx scripts/contract-check.ts                     # 26 API-behaviour cases
+npx tsx scripts/run-testset.ts                        # 29 hand-labelled rows
+npx tsx scripts/run-icp-benchmark.ts --csv <export>   # accuracy vs a labelled export
+npx tsx scripts/evaluate-gold-set.ts                  # macro-F1 vs the frozen baseline
+npx tsx scripts/debug-classify.ts --preset cre        # why did THIS lead get THAT label
+```
 
-| | Stage | Kind |
-| --- | --- | --- |
-| 1 | RESOLVE | email domain → company, LinkedIn → person. Cached 30d. |
-| 2 | ENRICH | Fundable facts + Exa recency/career history. Exa cached 3d. |
-| 3 | TIE | shared investor · same city · same stage · repeat founder |
-| 4 | ANGLE | DeepSeek V4-flash picks one angle + facts, by index |
-| 5 | WRITE | DeepSeek V4-pro. **The only generative step.** |
-| 6 | VERIFY | code, not prompt. One retry, then it refuses. |
+---
 
-## The guarantee
+## Editing behaviour
 
-An LLM handed thin data invents a plausible detail. *"Congrats on the Series A"*
-to someone who never raised is worse than sending nothing — it tells the
-recipient your data is wrong while you're selling them your data.
+Most of what you'd want to change is **JSON, not code**:
 
-So verification runs in **code**:
+| to change | edit |
+|---|---|
+| who qualifies as an ICP | `config/registry/icp_registry.json` (`roles`, `company`, `evidence_gate`) |
+| the use cases offered | `config/registry/use_case_catalog.json` |
+| the email frames | `config/registry/message_template_catalog.json` |
+| what may be claimed | `config/registry/approved_claims.json` |
 
-- Facts reach the writer as a closed set, passed by index.
-- Every figure, date, name and event is checked against that set. Rounding is
-  allowed; a new number is not.
-- **Two true facts may not be welded into a third claim.** "$750M raised" plus
-  "$44B valuation" does not license "raised at a $44B valuation" unless one fact
-  says so.
-- Relationship claims ("great speaking last week") are blocked outright.
-- A shared-investor fact may not be compressed into second person ("backed both
-  of you") — that silently asserts the fund also backs *us*.
-- Anything unresolved after one corrective retry **downgrades** to
-  `template_only` and returns your template untouched.
+**Bump the file's `version` after editing.** Labels are cached against it; an
+edit without a bump keeps serving old answers for 30 days. The registries
+validate at module load, so a malformed edit fails the build rather than a
+request.
 
-## Measured
+The classifier's system prompt is *built* from the registry
+([`classify.ts`](apps/api/src/lib/v2/classify.ts)) — only the framing and output
+format are English in the TypeScript. The two Exa research questions live in
+[`icp.ts`](packages/fundable-shared/src/icp.ts) and are load-bearing: rewording
+the first one moved CRE recall from 1/15 to 8/15.
+
+---
+
+## Known limits
+
+- **A caller's own `email_template` text is not claim-checked.** `approved_claims`
+  is fail-closed for *catalog* copy; text you supply is yours, by design.
+- **The rate limit is per-instance and in-memory.** A guard rail, not a quota.
+- **Suppression, sending and visitor identification are not ours.** The API has
+  no idea who is already a customer.
+- **The accept path is input-bound.** 12% core recall without a job title, 61%
+  with title and company — see [`docs/WORKFLOW.md`](docs/WORKFLOW.md).
+
+## Where things are
 
 | | |
-| --- | --- |
-| Unsupported claims | **0** across two 10-case adversarial audits; 147 logged calls total |
-| p95 latency | **6.9s** warm (20 runs) |
-| `template_only` rate | **12%** on a 25-row cold list (target was <40%) — *but see below* |
-| Cost per message | ~4.6 Fundable credits, $0.006 Exa, ~$0.003 tokens |
-| Tests | 67 offline |
-
-**Read the 12% sceptically.** The PRD says a rate *much* lower than 40% probably
-means the confidence gate is too loose — and my fixture used four
-ubiquitously-funded reference companies, so investor-overlap fired on nearly every
-row. A real cold list would settle whether it's the fixture or the gate. Flagged
-in `HANDOFF.md`.
-
----
-
-## Status
-
-**Built:** all four triggers, evidence + confidence, claim verification, ties,
-Exa enrichment, Supabase cache + request log with 90-day retention, bearer auth,
-rate limit, internal-identity guard, streaming, demo UI, operator guide.
-
-**Not built, deliberately:** sending (never), async queue + webhooks (no caller
-needs it yet), multi-tenant voice (v1 is internal).
-
-**Blocked on Jacob:** the voice. See **`HANDOFF.md`** — that's the file to read
-first if you're Jacob.
-
-## Docs
-
-| File | For |
-| --- | --- |
-| **`HANDOFF.md`** | **Jacob** — what I need, the two decisions, and my blunt read |
-| **`FINDINGS.md`** | Whoever owns the Fundable API — 8 reproducible issues, 4 silent |
-| `/guide` (in-app) | Whoever runs a demo — checklist, script, troubleshooting |
-| `BUILD_LOG.md` | Engineers — every contract correction and defect, with reasoning |
-| `PRD.md` | The original spec |
-
-## Before deploying this anywhere
-
-- The **rate limit is in-memory**, so on serverless each instance keeps its own
-  counter and 120/hour becomes meaningless. It would need to count `pz_log` rows.
-- The **latency hedge doubles LLM calls** on slow draws. Fine at demo volume.
-- `config/sender/EXAMPLE_not_real_customers.json` contains well-known companies
-  that are **not** Fundable customers. It exists to exercise the investor-overlap
-  mechanic. Do not point production at it.
-- Verification is pattern-based. Three adversarial audits found three distinct
-  defect classes; a fourth would likely find a fourth. **Re-run the audit after
-  any prompt or voice change** — treat that as part of the change.
-
-## Layout
-
-```
-packages/fundable-shared/   Fundable client, alias tables, claim checker,
-                            evidence verifier, Exa client, OpenRouter, voice loader
-apps/api/                   Next.js 16 on :3111
-  src/app/api/personalize/  the endpoint (+ /stream)
-  src/lib/pipeline/         resolve → facts → ties → confidence → angle → write+verify
-  src/lib/pipeline/triggers.ts   per-trigger evidence policy, in one table
-config/voice/jacob.json     the voice. Data, not code.
-config/sender/              named sender_context blocks
-supabase/migrations/        pz_cache + pz_log (applied + verified)
-```
-
-No secrets are committed. `.env` is git-ignored; `.env.example` carries
-placeholders only.
+|---|---|
+| [`docs/WORKFLOW.md`](docs/WORKFLOW.md) | visitor → email, end to end, with the measured numbers |
+| [`docs/TESTSET.md`](docs/TESTSET.md) | the 29-row acceptance run and what it does *not* prove |
+| [`docs/SPEC-v2.md`](docs/SPEC-v2.md) | the spec this is built to |
+| [`FINDINGS.md`](FINDINGS.md) | 9 reproducible defects in the upstream Fundable API |

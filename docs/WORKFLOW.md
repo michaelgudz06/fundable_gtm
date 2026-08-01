@@ -157,11 +157,11 @@ returns — after fixing the research question described below:
 
 | | no title | with title + company |
 |---|---|---|
-| Core recall | 12% (10/83) | **44% (28/64)** |
-| Exact-label recall | 6% (5/83) | **34% (22/64)** |
-| False positives | 1% (2/194) | **0% (0/40)** |
+| Core recall | 12% (10/83) | **61% (39/64)** |
+| Exact-label recall | 6% (5/83) | **52% (33/64)** |
+| False positives | 1% (2/194) | **3% (1/40)** |
 
-Titles here were extracted from the reference's own reasoning, so 44% is an
+Titles here were extracted from the reference's own reasoning, so 61% is an
 upper bound, not a forecast. It is enough to say the input is the binding
 constraint and not enough to call the accept path solved.
 
@@ -250,7 +250,9 @@ which is why identity lookups are cached and why nothing waits behind them.
 Three suites, three questions:
 
 ```bash
+npm run verify                           # typecheck + 121 offline tests + build
 npx tsx scripts/contract-check.ts        # does the API behave to spec? (26 cases)
+npx tsx scripts/evaluate-gold-set.ts     # macro-F1 / Not Core precision vs the baseline
 npx tsx scripts/run-testset.ts           # does it agree with Jacob's hand calls? (29 rows)
 npx tsx scripts/run-icp-benchmark.ts --csv <export.csv> --n 400   # accuracy vs a labelled export
 npm test                                 # 101 offline tests
