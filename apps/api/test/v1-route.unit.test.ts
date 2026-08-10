@@ -7,7 +7,9 @@
  */
 
 import assert from "node:assert/strict";
-import { beforeEach, describe, test } from "node:test";
+import { before, beforeEach, describe, test } from "node:test";
+
+import { loadRootEnv } from "@fundable/shared";
 
 import { POST } from "../src/app/api/v1/personalize/route";
 
@@ -29,6 +31,8 @@ async function errorCode(res: Response): Promise<string> {
 }
 
 describe("v1/personalize HTTP gates (offline)", () => {
+  before(() => loadRootEnv());
+
   beforeEach(() => {
     process.env.PERSONALIZE_API_KEY = KEY;
   });
