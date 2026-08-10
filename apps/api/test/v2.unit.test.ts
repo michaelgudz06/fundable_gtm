@@ -20,7 +20,7 @@ import {
   isDeferred,
   useCasesFor,
 } from "../src/lib/v2/registry";
-import { asCompanyName, asFactValue, buildClassifierPrompt, researchTarget } from "../src/lib/v2/classify";
+import { asCompanyName, asFactValue, buildClassifierPrompt, classifyV2, researchTarget } from "../src/lib/v2/classify";
 import { NOT_CORE_OPTION, PENDING_HUBSPOT_OPTIONS, hubspotLabelFor } from "../src/lib/v2/hubspot";
 import {
   articleFor,
@@ -365,6 +365,17 @@ describe("English mechanics (regressions from the real visitor list)", () => {
       });
       assert.deepEqual(issues, [], `#${e.number}: ${JSON.stringify(issues)}`);
     }
+  });
+});
+
+describe("classify pre-gates (CLS-003, offline)", () => {
+  test("freemail with no title fails closed before any upstream call", async () => {
+    const { newExaLedger } = await import("@fundable/shared");
+    const res = await classifyV2({ email: "someone@gmail.com" }, newExaLedger());
+    assert.equal(res.icpNumber, null);
+    assert.equal(res.label, "Not Core ICP");
+    assert.equal(res.path, "gated");
+    assert.equal(res.usage.length, 0, "no model call may have been made");
   });
 });
 
