@@ -11,32 +11,15 @@
 
 import { FundableError } from "@fundable/shared";
 
-import { checkAuth, checkRateLimit } from "../../../../lib/auth";
+import { gateRequest, jsonError as error } from "../../../../lib/auth";
 import { personalize } from "../../../../lib/pipeline/personalize";
 import { parseRequest, type StageEvent } from "../../../../lib/pipeline/types";
 
 export const runtime = "nodejs";
 
-function error(status: number, code: string, message: string, details?: unknown) {
-  return Response.json(
-    { error: { code, message, ...(details !== undefined ? { details } : {}) } },
-    { status }
-  );
-}
-
 export async function POST(req: Request): Promise<Response> {
-  const auth = checkAuth(req);
-  if (!auth.ok) {
-    return error(auth.status, auth.status === 401 ? "UNAUTHORIZED" : "NOT_CONFIGURED", auth.message);
-  }
-
-  const rate = checkRateLimit(auth.keyHash);
-  if (!rate.ok) {
-    return Response.json(
-      { error: { code: "RATE_LIMITED", message: `Over the hourly limit. Retry in ${rate.retryAfterS}s.` } },
-      { status: 429, headers: { "Retry-After": String(rate.retryAfterS) } }
-    );
-  }
+  const gate = gateRequest(req);
+  if (!gate.ok) return gate.response;
 
   let raw: unknown;
   try {
@@ -59,7 +42,7 @@ export async function POST(req: Request): Promise<Response> {
       const send = (e: StageEvent) => controller.enqueue(encoder.encode(JSON.stringify(e) + "\n"));
 
       try {
-        const response = await personalize(parsed.req, auth.keyHash, send);
+        const response = await personalize(parsed.req, gate.keyHash, send);
         // The pipeline emits its own `done` narration; the terminal event
         // carries the actual payload the result panel renders.
         send({ t: Date.now() - started, stage: "done", status: "done", response });

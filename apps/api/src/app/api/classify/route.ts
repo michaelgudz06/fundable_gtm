@@ -38,20 +38,13 @@ import {
   startBudget,
 } from "@fundable/shared";
 
-import { checkAuth, checkRateLimit } from "../../../lib/auth";
+import { gateRequest, jsonError as error } from "../../../lib/auth";
 import { CLASSIFIER_PROMPT_VERSION } from "../../../lib/v2/classify";
 import { classifyCached } from "../../../lib/v2/classify-cached";
 import { hubspotLabelFor } from "../../../lib/v2/hubspot";
 import { REGISTRY_VERSIONS } from "../../../lib/v2/registry";
 
 export const runtime = "nodejs";
-
-function error(status: number, code: string, message: string, details?: unknown) {
-  return Response.json(
-    { error: { code, message, ...(details !== undefined ? { details } : {}) } },
-    { status }
-  );
-}
 
 type Body = {
   email?: string;
@@ -62,17 +55,8 @@ type Body = {
 };
 
 export async function POST(req: Request): Promise<Response> {
-  const auth = checkAuth(req);
-  if (!auth.ok) {
-    return error(auth.status, auth.status === 401 ? "UNAUTHORIZED" : "NOT_CONFIGURED", auth.message);
-  }
-  const rate = checkRateLimit(auth.keyHash);
-  if (!rate.ok) {
-    return Response.json(
-      { error: { code: "RATE_LIMITED", message: `Over the hourly limit. Retry in ${rate.retryAfterS}s.` } },
-      { status: 429, headers: { "Retry-After": String(rate.retryAfterS) } }
-    );
-  }
+  const gate = gateRequest(req);
+  if (!gate.ok) return gate.response;
 
   let body: Body;
   try {
