@@ -247,7 +247,7 @@ export default async function Home() {
               <li>Exa recency + career history, with a strict identity gate</li>
               <li>Supabase cache (30d Fundable / 3d Exa) + request log with 90-day retention</li>
               <li>Bearer auth, per-key rate limit, internal-identity guard</li>
-              <li>64 offline tests</li>
+              <li>Offline tests for every deterministic gate (`npm test`)</li>
             </ul>
           </div>
           <div>
