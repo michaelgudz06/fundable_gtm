@@ -250,12 +250,12 @@ which is why identity lookups are cached and why nothing waits behind them.
 Three suites, three questions:
 
 ```bash
-npm run verify                           # typecheck + 121 offline tests + build
+npm run verify                           # typecheck + 133 offline tests + build
 npx tsx scripts/contract-check.ts        # does the API behave to spec? (26 cases)
 npx tsx scripts/evaluate-gold-set.ts     # macro-F1 / Not Core precision vs the baseline
 npx tsx scripts/run-testset.ts           # does it agree with Jacob's hand calls? (29 rows)
 npx tsx scripts/run-icp-benchmark.ts --csv <export.csv> --n 400   # accuracy vs a labelled export
-npm test                                 # 101 offline tests
+npm test                                 # 133 offline tests
 ```
 
 `contract-check` runs cheap cases first, so a broken deploy fails in seconds.
