@@ -6,11 +6,11 @@
 
 ## Where it stands
 
-The API is built, deployed and measured against §6. Six of the seven acceptance
-clauses pass on evidence. The two that do not are **definitional rather than
-engineering** — one asks us to beat a baseline that cannot be beaten as
-written, the other asks for gold-set coverage the visitor traffic does not
-contain. Both need a decision from you; neither is fixed by more building.
+The API is built, deployed and measured against §6. Five of the seven acceptance
+clauses pass on evidence. Of the two that do not: one asks us to beat a baseline
+that cannot be beaten as written and needs a decision from you; the other is
+gold-set coverage, and most of that gap is unfinished work rather than blocked
+work. Both are set out below with the actual counts.
 
 The most useful thing found in this phase is not an accuracy number. It is that
 **the visitor feed already carries job titles, and we were not sending them.**
@@ -29,7 +29,7 @@ core-ICP recall.
 | 100% schema-valid; no unresolved variables; no empty-name greetings | **pass** | 26/26 live + 123 offline tests |
 | p95 ≤ 15s with supplied LinkedIn | **pass** | p95 **1.01s** warm, 5.85s cold |
 | Meet/exceed frozen Orange Slice baseline | **needs a decision** | see below |
-| Gold set composition | **partially met** | see below |
+| Gold set composition | **fails 3 of 4 clauses** | see below |
 
 Also: **25/25 agreement** on the 29-row hand-labelled visitor list, zero
 disagreements in either direction.
@@ -95,27 +95,46 @@ frozen baseline is not a thing it can produce.
 a blind-labelled gold set and do not regress."* We can then measure both
 classifiers fairly, which is the useful version of the question.
 
-### 2. "≥5 positives per core label" is unreachable from visitor traffic
+### 2. The gold set fails three of §6's four composition clauses
 
-Across all 1511 rows, Orange Slice labels 100 as core (6.6%). By label:
+The spec asks for: *"≥5 positives per core label, ≥40 Not Core, ≥2 boundary per
+gate, slices for missing-LinkedIn/personal-email/conflict/sparse/past-role."*
+Measured against the current 71-row set:
 
-- **Zero rows: #7 Investor Finder, #10 Cross-Border Payments, #17 Startup
-  Legal, #18 Startup Marketing & PR.**
-- Nine more labels have between 1 and 4.
-- Only #2 (15), #6 (35), #19 (23) and #16 (5) clear five.
+| clause | required | actual |
+|---|---|---|
+| ≥5 positives per core label | 19 labels | **5** |
+| ≥40 Not Core | 40 | **13** |
+| ≥2 boundary rows per gate | 22 gates | **0 gates** clear it |
+| the five named slices | 5 | **3** — `conflict` and `missing-LinkedIn` absent |
 
-No amount of mining fixes this — those buyers do not visit the site in
-measurable numbers. Those rows have to be **authored against real companies**,
-which is how the hard-rule fixtures already work.
+Only one of these is genuinely hard. Across all 1511 visitor rows Orange Slice
+labels 100 as core (6.6%), and **#7, #10, #17 and #18 appear zero times** — no
+amount of mining reaches ≥5 for those, so they must be authored against real
+companies, the way the hard-rule fixtures already are.
 
-`Not Core` is the opposite case: 1189 available, so the ≥40 requirement is
-trivial whenever we want it.
+The other three are just unfinished work, not blocked work. `Not Core` has 1189
+candidates available; boundary and slice rows are authored, not mined. An
+earlier draft of this document described the ≥40 clause as "trivial whenever we
+want it" without saying it currently sits at 13. That was misleading and is
+corrected here.
+
+### 2b. 21 of the 71 rows were never reviewed by a person
+
+They are hard-rule fixtures derived from `icp_registry.json`, and they now carry
+`approved_by: "registry-derived"` so the mix is visible per row. Two things
+follow. They are not independent evidence of accuracy — the classifier is
+already tuned to pass them. And they are the same fixtures scoring §6's separate
+*"100% hard-rule fixtures"* clause, so counting them here would let one dataset
+satisfy two independent criteria. The evaluator now reports the human-reviewed
+and registry-derived rows separately for exactly that reason; quote the
+human-reviewed number when asked how accurate the classifier is.
 
 ---
 
 ## What the accuracy numbers mean, and don't
 
-Current gold set: **v3, 71 rows.**
+Current gold set: **v4, 71 rows** — 50 human-reviewed, 21 registry-derived.
 
 | metric | value |
 |---|---|

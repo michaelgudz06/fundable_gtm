@@ -45,3 +45,9 @@ yarn-error.log*
 # nobody has approved them yet. The approved set (config/eval/gold_set.json) IS
 # committed — it is the evaluation record, and it must survive a clone.
 /config/eval/review_queue.json
+
+# Frozen evaluation baseline. Deliberately untracked: it is NOT an Orange Slice
+# number, and §6 asks us to meet "the frozen Orange Slice baseline". A committed
+# self-baseline reads as satisfying that clause when it only restates our own
+# last run. Commit it once Jacob has agreed to redefine the criterion.
+/config/eval/baseline.json

@@ -1,6 +1,7 @@
 {
-  "version": "2.0.0",
-  "//": "approved_claims per SPEC-v2 §5. FAIL-CLOSED: the composer may only use claims with status 'approved'. Everything numeric, customer-name, pricing, or trial from Jacob's raw templates is seeded here as pending_review — they appeared in real sent copy, but provenance does not auto-approve a claim (spec §4). Jacob flips status to 'approved' per claim.",
+  "version": "2.1.0",
+  "//": "approved_claims per SPEC-v2 §5. FAIL-CLOSED: the composer may only use claims with status 'approved'. Everything numeric, customer-name, pricing, or trial from Jacob's raw templates was seeded here as pending_review — they appeared in real sent copy, but provenance does not auto-approve a claim (spec §4). 2.1.0: all seven pending claims signed off by Michael, 2026-08-06.",
+  "//decay": "metric-2k-startups-month and metric-500-hiring-flags are MONTH-RELATIVE. They were true when signed off and nothing in this system will notice when they stop being true. Re-verify on a cadence, or reword them to something durable, before they are quoted as current a year from now. trial-30-day and the two customer_name claims are also externally contingent: a changed trial term or a customer who no longer wishes to be named makes them wrong without any code changing.",
   "claims": [
     { "id": "capability-deal-alerts", "status": "approved", "text": "Deal alerts: describe your ICP in natural language and get notified when a matching company raises.", "kind": "capability", "source": "product" },
     { "id": "capability-realtime-tracking", "status": "approved", "text": "Fundable tracks startup funding rounds, investors, and people in real time.", "kind": "capability", "source": "product" },
@@ -8,12 +9,12 @@
     { "id": "capability-mcp", "status": "approved", "text": "Fundable can be used inside Claude or ChatGPT via MCP.", "kind": "capability", "source": "product" },
     { "id": "capability-api", "status": "approved", "text": "Fundable data is available over an API for use in your own workflow.", "kind": "capability", "source": "product" },
 
-    { "id": "metric-hourly-tracking", "status": "pending_review", "text": "We track newly funded companies every hour / within the hour of announcement.", "kind": "timing", "source": "template: recruiting agency D/F, big-org AE A-D" },
-    { "id": "metric-2k-startups-month", "status": "pending_review", "text": "2k startups tracked in the last month.", "kind": "metric", "source": "template: recruiting agency D/E" },
-    { "id": "metric-500-hiring-flags", "status": "pending_review", "text": "500+ startups flagged with hiring signals last month.", "kind": "metric", "source": "template: recruiting agency F" },
-    { "id": "trial-30-day", "status": "pending_review", "text": "30-day free trial.", "kind": "trial", "source": "template: cross-border conversation B" },
-    { "id": "customer-rho-slash", "status": "pending_review", "text": "We work with banking startups Rho and Slash.", "kind": "customer_name", "source": "template: startup banking C" },
-    { "id": "customer-ny-tenant-rep", "status": "pending_review", "text": "Currently working with tenant rep firms in NY.", "kind": "customer_name", "source": "template: CRE VP/Analyst" },
-    { "id": "asset-recruiter-demo-video", "status": "pending_review", "text": "Demo video: https://www.tella.tv/video/fundable-alerts-for-recruiters-1-2p32", "kind": "asset", "source": "template: recruiting agency E" }
+    { "id": "metric-hourly-tracking", "status": "approved", "text": "We track newly funded companies every hour / within the hour of announcement.", "kind": "timing", "source": "template: recruiting agency D/F, big-org AE A-D" },
+    { "id": "metric-2k-startups-month", "status": "approved", "text": "2k startups tracked in the last month.", "kind": "metric", "source": "template: recruiting agency D/E" },
+    { "id": "metric-500-hiring-flags", "status": "approved", "text": "500+ startups flagged with hiring signals last month.", "kind": "metric", "source": "template: recruiting agency F" },
+    { "id": "trial-30-day", "status": "approved", "text": "30-day free trial.", "kind": "trial", "source": "template: cross-border conversation B" },
+    { "id": "customer-rho-slash", "status": "approved", "text": "We work with banking startups Rho and Slash.", "kind": "customer_name", "source": "template: startup banking C" },
+    { "id": "customer-ny-tenant-rep", "status": "approved", "text": "Currently working with tenant rep firms in NY.", "kind": "customer_name", "source": "template: CRE VP/Analyst" },
+    { "id": "asset-recruiter-demo-video", "status": "approved", "text": "Demo video: https://www.tella.tv/video/fundable-alerts-for-recruiters-1-2p32", "kind": "asset", "source": "template: recruiting agency E" }
   ]
 }
