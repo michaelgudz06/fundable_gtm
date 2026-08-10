@@ -24,16 +24,12 @@ import exampleSender from "../../../../config/sender/EXAMPLE_not_real_customers.
 
 import type { SenderContext } from "./pipeline/facts";
 
-/** Validated at module load, so a malformed profile fails the build, not a request. */
-export const VOICES: Record<string, VoiceProfile> = {
-  jacob: validateVoice(jacobVoice, "jacob"),
-};
-
-export function getVoice(id = "jacob"): VoiceProfile {
-  const v = VOICES[id];
-  if (!v) throw new Error(`Voice profile "${id}" is not registered in config-registry.ts`);
-  return v;
-}
+/**
+ * The one voice profile. Validated at module load, so a malformed profile fails
+ * the build, not a request. Becomes a keyed registry again the day a second
+ * voice exists.
+ */
+export const VOICE: VoiceProfile = validateVoice(jacobVoice, "jacob");
 
 /**
  * Sender contexts. Keys MUST match the `id` field inside each file — the loader

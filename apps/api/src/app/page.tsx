@@ -9,7 +9,7 @@ import Link from "next/link";
 
 import { optionalEnv, provenanceWarning } from "@fundable/shared";
 
-import { getVoice } from "../lib/config-registry";
+import { VOICE } from "../lib/config-registry";
 import { checkHealth, type Dep } from "../lib/health";
 
 export const dynamic = "force-dynamic";
@@ -55,7 +55,7 @@ const PIPELINE = [
 ];
 
 export default async function Home() {
-  const voice = getVoice("jacob");
+  const voice = VOICE;
   const warning = provenanceWarning(voice);
   const keySet = !!optionalEnv("PERSONALIZE_API_KEY");
 
@@ -239,8 +239,7 @@ export default async function Home() {
           <div>
             <h3>Done</h3>
             <ul className="ov-list">
-              <li><code>POST /api/personalize</code> — sync, all four triggers</li>
-              <li><code>POST /api/personalize/stream</code> — NDJSON stage events</li>
+              <li><code>POST /api/personalize/stream</code> — NDJSON stage events, all four triggers</li>
               <li><code>/demo</code> — live pipeline view, evidence cards, clipboard</li>
               <li>Evidence + confidence on every response (0.5 / 0.8 gates)</li>
               <li>Claim verification in code, one corrective retry, honest downgrade</li>
@@ -248,7 +247,7 @@ export default async function Home() {
               <li>Exa recency + career history, with a strict identity gate</li>
               <li>Supabase cache (30d Fundable / 3d Exa) + request log with 90-day retention</li>
               <li>Bearer auth, per-key rate limit, internal-identity guard</li>
-              <li>64 offline tests</li>
+              <li>Offline tests for every deterministic gate (<code>npm test</code>)</li>
             </ul>
           </div>
           <div>
