@@ -224,14 +224,3 @@ function listPhrase(items: string[]): string {
   if (items.length === 2) return `${items[0]} and ${items[1]}`;
   return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
 }
-
-/** The strongest tie, for the cold trigger's default angle. */
-export function bestTie(ties: Tie[]): Tie | null {
-  const RANK: Record<TieKind, number> = {
-    shared_investor: 0,
-    repeat_founder: 1,
-    same_stage: 2,
-    same_city: 3,
-  };
-  return [...ties].sort((a, b) => RANK[a.kind] - RANK[b.kind])[0] ?? null;
-}

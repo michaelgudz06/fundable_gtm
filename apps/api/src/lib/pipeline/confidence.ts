@@ -106,6 +106,5 @@ function leadProsePresent(company: Company): boolean {
   return !!short && /\bled by\b/i.test(short);
 }
 
-/** The PRD's behavioural thresholds, named so the route reads like the table. */
-export const FULL_PERSONALIZATION = 0.8;
+/** The PRD's template_only threshold (§7.2): below this, no copy is written. */
 export const TEMPLATE_ONLY_BELOW = 0.5;

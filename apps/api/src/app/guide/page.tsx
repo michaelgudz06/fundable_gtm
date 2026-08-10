@@ -51,7 +51,7 @@ export default function GuidePage() {
         <p>In production nobody opens this. A workflow calls it and a draft appears for review:</p>
         <pre className="gd-flow">{`Fundable deal alert fires
   → n8n webhook
-  → POST /api/personalize
+  → POST /api/personalize/stream
   → copy + evidence returned
   → if confidence ≥ 0.5, n8n creates a Gmail DRAFT
   → you read it, edit if you want, hit send`}</pre>
@@ -107,7 +107,7 @@ export default function GuidePage() {
       {/* ------------------------------------------------------------- 3 */}
       <section id="api" className="gd-section">
         <h2>3 · Calling it</h2>
-        <pre className="gd-code">{`curl -s -X POST https://personalize-api-umber.vercel.app/api/personalize \\
+        <pre className="gd-code">{`curl -s -X POST https://personalize-api-umber.vercel.app/api/personalize/stream \\
   -H "Authorization: Bearer $PERSONALIZE_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -128,6 +128,11 @@ export default function GuidePage() {
         </p>
 
         <h3 className="gd-h3">What comes back</h3>
+        <p>
+          NDJSON: one stage event per line as the pipeline runs, ending with a <code>done</code>{" "}
+          event whose <code>response</code> field carries the payload below. This is what the demo
+          renders.
+        </p>
         <table className="ov-table">
           <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
           <tbody>
@@ -151,7 +156,6 @@ export default function GuidePage() {
 
         <h3 className="gd-h3">Also available</h3>
         <ul className="gd-bugs">
-          <li><code>POST /api/personalize/stream</code> — same thing as NDJSON, one stage event per line. This is what the demo renders.</li>
           <li><code>GET /api/health</code> — unauthenticated, makes no paid calls, safe to poll.</li>
           <li><code>GET /api/meta</code> — sender contexts and voice provenance.</li>
         </ul>

@@ -239,8 +239,7 @@ export default async function Home() {
           <div>
             <h3>Done</h3>
             <ul className="ov-list">
-              <li><code>POST /api/personalize</code> — sync, all four triggers</li>
-              <li><code>POST /api/personalize/stream</code> — NDJSON stage events</li>
+              <li><code>POST /api/personalize/stream</code> — NDJSON stage events, all four triggers</li>
               <li><code>/demo</code> — live pipeline view, evidence cards, clipboard</li>
               <li>Evidence + confidence on every response (0.5 / 0.8 gates)</li>
               <li>Claim verification in code, one corrective retry, honest downgrade</li>

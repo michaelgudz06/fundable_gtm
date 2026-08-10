@@ -14,7 +14,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 
 import { optionalEnv } from "@fundable/shared";
 
-export function sha256(value: string): string {
+function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 

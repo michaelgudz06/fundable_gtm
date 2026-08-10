@@ -16,7 +16,6 @@ import {
   MODEL_PLAN,
   newLedger,
   normalizeDomain,
-  normalizeEmail,
   startBudget,
   normalizeLinkedIn,
   personByLinkedIn,
@@ -45,8 +44,6 @@ import {
   approvedClaimTexts,
   type MessageType,
 } from "../../../../lib/v2/registry";
-
-import { createHash } from "node:crypto";
 
 export const runtime = "nodejs";
 
