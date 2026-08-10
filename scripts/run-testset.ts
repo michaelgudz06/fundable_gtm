@@ -15,33 +15,9 @@
  */
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-
-// ---------------------------------------------------------------------------
-// config
-// ---------------------------------------------------------------------------
-
-function loadEnv(): Record<string, string> {
-  const out: Record<string, string> = {};
-  try {
-    for (const line of readFileSync(join(ROOT, ".env"), "utf8").split("\n")) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-      if (m?.[1] && m[2] !== undefined) out[m[1]] = m[2].replace(/^["']|["']$/g, "");
-    }
-  } catch {
-    /* fall through to process.env */
-  }
-  return { ...out, ...process.env } as Record<string, string>;
-}
-
-function arg(name: string, fallback?: string): string | undefined {
-  const i = process.argv.indexOf(`--${name}`);
-  return i >= 0 ? process.argv[i + 1] : fallback;
-}
-const flag = (name: string) => process.argv.includes(`--${name}`);
+import { ROOT, apiBase, apiKey, arg, flag, mapLimit } from "./lib.js";
 
 type Row = {
   id: string;
@@ -151,22 +127,6 @@ async function callOne(base: string, key: string, row: Row, withDomain: boolean)
     headers,
     verdict,
   };
-}
-
-async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T, i: number) => Promise<R>): Promise<R[]> {
-  const out = new Array<R>(items.length);
-  let next = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, async () => {
-      for (;;) {
-        const i = next++;
-        const item = items[i];
-        if (item === undefined) return;
-        out[i] = await fn(item, i);
-      }
-    })
-  );
-  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -287,14 +247,12 @@ function report(results: Outcome[], meta: { base: string; variant: string; start
 // ---------------------------------------------------------------------------
 
 async function main() {
-  const env = loadEnv();
-  const base = (arg("base", "https://personalize-api-umber.vercel.app") ?? "").replace(/\/$/, "");
-  const key = env.PERSONALIZE_API_KEY;
-  if (!key) throw new Error("PERSONALIZE_API_KEY missing (.env or environment).");
+  const base = apiBase();
+  const key = apiKey();
   const withDomain = flag("domain");
   const variant = withDomain ? "with-domain" : "baseline";
   const concurrency = Number(arg("concurrency", "4"));
-  const outDir = resolve(arg("out", join(ROOT, "test-runs")) ?? "");
+  const outDir = join(ROOT, "test-runs");
   mkdirSync(outDir, { recursive: true });
 
   const fixture = JSON.parse(

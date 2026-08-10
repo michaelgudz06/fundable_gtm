@@ -21,36 +21,11 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import { ROOT, apiBase, apiKey, arg, flag, mapLimit } from "./lib.js";
 
-function loadEnv(): Record<string, string> {
-  const out: Record<string, string> = {};
-  try {
-    for (const line of readFileSync(join(ROOT, ".env"), "utf8").split("\n")) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-      if (m?.[1] && m[2] !== undefined) out[m[1]] = m[2].replace(/^["']|["']$/g, "");
-    }
-  } catch {
-    /* environment only */
-  }
-  return { ...out, ...process.env } as Record<string, string>;
-}
-const env = loadEnv();
-const arg = (n: string, d?: string) => {
-  const i = process.argv.indexOf(`--${n}`);
-  if (i < 0) return d;
-  const v = process.argv[i + 1];
-  // A flag used as a bare switch (`--approve`) has no value after it, and
-  // returning undefined there is how `--approve` came to crash with an opaque
-  // EISDIR: resolve(undefined ?? "") is the CWD, and readFileSync on a
-  // directory throws. Fall back to the default instead. The `--` guard stops
-  // the next FLAG being eaten as this one's value.
-  return v !== undefined && !v.startsWith("--") ? v : d;
-};
-const BASE = (arg("base", "https://personalize-api-umber.vercel.app") ?? "").replace(/\/$/, "");
-const KEY = env.PERSONALIZE_API_KEY ?? "";
+const BASE = apiBase();
+const KEY = apiKey();
 
 /** One human-approved example. `label` is truth, not a prediction. */
 type GoldRow = {
@@ -111,22 +86,6 @@ async function classify(row: GoldRow): Promise<string | null> {
   return null;
 }
 
-async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {
-  const out = new Array<R>(items.length);
-  let next = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, async () => {
-      for (;;) {
-        const i = next++;
-        const item = items[i];
-        if (item === undefined) return;
-        out[i] = await fn(item);
-      }
-    })
-  );
-  return out;
-}
-
 type PerLabel = { support: number; tp: number; fp: number; fn: number };
 
 function score(rows: { truth: string; predicted: string | null }[]) {
@@ -167,11 +126,10 @@ function score(rows: { truth: string; predicted: string | null }[]) {
 }
 
 async function main() {
-  if (!KEY) throw new Error("PERSONALIZE_API_KEY missing.");
   const setPath = resolve(arg("set", join(ROOT, "config/eval/gold_set.json")) ?? "");
   if (!existsSync(setPath)) {
     throw new Error(
-      `No gold set at ${setPath}. Build one with:\n  npx tsx scripts/build-gold-set.ts --review`
+      `No gold set at ${setPath}. Build one with:\n  npx tsx scripts/build-gold-set.ts --csv <export.csv>, review the queue, then --approve`
     );
   }
   const gold = JSON.parse(readFileSync(setPath, "utf8")) as GoldSet;
@@ -313,7 +271,7 @@ async function main() {
 
   if (short) {
     process.exitCode = 1;
-    if (process.argv.includes("--freeze")) {
+    if (flag("freeze")) {
       process.stderr.write(
         "\nRefusing to freeze a baseline from an incomplete run: a baseline is the thing\n" +
           "every later run is compared against, and one built from a biased subset makes\n" +
@@ -322,7 +280,7 @@ async function main() {
       return;
     }
   }
-  if (process.argv.includes("--freeze")) {
+  if (flag("freeze")) {
     mkdirSync(dirname(baselinePath), { recursive: true });
     writeFileSync(
       baselinePath,

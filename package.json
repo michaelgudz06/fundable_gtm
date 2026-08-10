@@ -15,6 +15,8 @@
     "review": "tsx scripts/review-gold-set.ts",
     "review:status": "tsx scripts/review-gold-set.ts --status",
     "gold:build": "tsx scripts/build-gold-set.ts --approve",
+    "hard-rules": "tsx scripts/run-hard-rules.ts",
+    "test:scripts": "tsx --test scripts/lib.test.ts",
     "dev": "npm run dev --workspace @fundable/api",
     "dev:bench": "PERSONALIZE_RATE_LIMIT_PER_HOUR=20000 npm run dev --workspace @fundable/api",
     "build": "npm run build --workspace @fundable/api",
