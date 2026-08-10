@@ -29,7 +29,7 @@ import {
   type Usage,
 } from "@fundable/shared";
 
-import { getVoice } from "../config-registry";
+import { VOICE } from "../config-registry";
 import { getStorage, CACHE_TTL_MS, type LogRow } from "../storage";
 import { pickAngle } from "./angle";
 import { buildFacts, prospectFacts, recencyFacts, tieFacts, type Fact } from "./facts";
@@ -68,7 +68,7 @@ export async function personalize(
     }
   };
 
-  const voice = getVoice("jacob");
+  const voice = VOICE;
   const voiceWarning = provenanceWarning(voice);
   if (voiceWarning) warnings.push(voiceWarning);
 

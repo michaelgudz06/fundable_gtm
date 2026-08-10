@@ -10,12 +10,12 @@ import Link from "next/link";
 
 import { optionalEnv } from "@fundable/shared";
 
-import { getVoice, senderContextIds } from "../../lib/config-registry";
+import { VOICE, senderContextIds } from "../../lib/config-registry";
 
 export const dynamic = "force-dynamic";
 
 export default function GuidePage() {
-  const voice = getVoice("jacob");
+  const voice = VOICE;
   const contexts = senderContextIds();
   const keySet = !!optionalEnv("PERSONALIZE_API_KEY");
 

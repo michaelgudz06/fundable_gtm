@@ -9,7 +9,7 @@ import Link from "next/link";
 
 import { optionalEnv, provenanceWarning } from "@fundable/shared";
 
-import { getVoice } from "../lib/config-registry";
+import { VOICE } from "../lib/config-registry";
 import { checkHealth, type Dep } from "../lib/health";
 
 export const dynamic = "force-dynamic";
@@ -55,7 +55,7 @@ const PIPELINE = [
 ];
 
 export default async function Home() {
-  const voice = getVoice("jacob");
+  const voice = VOICE;
   const warning = provenanceWarning(voice);
   const keySet = !!optionalEnv("PERSONALIZE_API_KEY");
 
