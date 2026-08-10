@@ -72,3 +72,36 @@ export function checkRateLimit(keyHash: string): RateResult {
   WINDOWS.set(keyHash, hits);
   return { ok: true };
 }
+
+/** The plain JSON error envelope used by every route without version headers. */
+export function jsonError(status: number, code: string, message: string, details?: unknown): Response {
+  return Response.json(
+    { error: { code, message, ...(details !== undefined ? { details } : {}) } },
+    { status }
+  );
+}
+
+/**
+ * Auth + rate limit in one step — the preamble every route runs before reading
+ * the body. On failure the caller returns `response` as-is.
+ */
+export function gateRequest(req: Request): { ok: true; keyHash: string } | { ok: false; response: Response } {
+  const auth = checkAuth(req);
+  if (!auth.ok) {
+    return {
+      ok: false,
+      response: jsonError(auth.status, auth.status === 401 ? "UNAUTHORIZED" : "NOT_CONFIGURED", auth.message),
+    };
+  }
+  const rate = checkRateLimit(auth.keyHash);
+  if (!rate.ok) {
+    return {
+      ok: false,
+      response: Response.json(
+        { error: { code: "RATE_LIMITED", message: `Over the hourly limit. Retry in ${rate.retryAfterS}s.` } },
+        { status: 429, headers: { "Retry-After": String(rate.retryAfterS) } }
+      ),
+    };
+  }
+  return { ok: true, keyHash: auth.keyHash };
+}
