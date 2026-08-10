@@ -29,7 +29,7 @@ serving old answers.
 
 ## Verify loop
 
-- `npm run verify` — typecheck every workspace + 121 offline tests + build.
+- `npm run verify` — typecheck every workspace + 133 offline tests + build.
   Offline, no keys. Must pass before any commit.
 - Gold-set loop (live, spends real credits): mine candidates with
   `npx tsx scripts/build-gold-set.ts --csv <export>`, a **human** approves every
@@ -46,8 +46,9 @@ serving old answers.
 - `FINDINGS.md` — live-probed defects in the upstream Fundable API. Read it
   before touching `packages/fundable-shared/src/fundable.ts`.
 - `PRD.md`, `BUILD_LOG.md` — historical records of the v1 personalizer
-  (`/api/personalize`, still in the tree). Do not update them and do not read
-  them as current status.
+  (`/api/personalize`, route since deleted; its streaming sibling
+  `/api/personalize/stream` is still in the tree, serving `/demo`). Do not
+  update them and do not read them as current status.
 
 ## Maintaining this file
 
