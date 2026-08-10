@@ -29,67 +29,9 @@
  */
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-
-function loadEnv(): Record<string, string> {
-  const out: Record<string, string> = {};
-  try {
-    for (const line of readFileSync(join(ROOT, ".env"), "utf8").split("\n")) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-      if (m?.[1] && m[2] !== undefined) out[m[1]] = m[2].replace(/^["']|["']$/g, "");
-    }
-  } catch {
-    /* environment only */
-  }
-  return { ...out, ...process.env } as Record<string, string>;
-}
-
-function arg(name: string, fallback?: string): string | undefined {
-  const i = process.argv.indexOf(`--${name}`);
-  return i >= 0 ? process.argv[i + 1] : fallback;
-}
-
-// ---------------------------------------------------------------------------
-// CSV
-// ---------------------------------------------------------------------------
-
-/** Minimal RFC4180 reader: quoted fields, escaped quotes, embedded newlines. */
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = "";
-  let quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (quoted) {
-      if (c === '"') {
-        if (text[i + 1] === '"') {
-          field += '"';
-          i++;
-        } else quoted = false;
-      } else field += c;
-      continue;
-    }
-    if (c === '"') quoted = true;
-    else if (c === ",") {
-      row.push(field);
-      field = "";
-    } else if (c === "\n") {
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = "";
-    } else if (c !== "\r") field += c;
-  }
-  if (field || row.length) {
-    row.push(field);
-    rows.push(row);
-  }
-  return rows.filter((r) => r.some((c) => c.trim() !== ""));
-}
+import { ROOT, apiBase, apiKey, arg, mapLimit, parseCsv } from "./lib.js";
 
 type Row = {
   linkedin: string;
@@ -116,8 +58,8 @@ function emailKind(email: string): "corporate" | "freemail" | "none" {
 }
 
 function readRows(csvPath: string): Row[] {
-  const grid = parseCsv(readFileSync(csvPath, "utf8").replace(/^﻿/, ""));
-  const header = (grid[0] ?? []).map((h) => h.trim().toLowerCase().replace(/^﻿/, ""));
+  const grid = parseCsv(readFileSync(csvPath, "utf8"));
+  const header = (grid[0] ?? []).map((h) => h.trim().toLowerCase());
   const col = (name: string) => header.indexOf(name);
   const iLi = col("linkedin url");
   const iFirst = col("first name");
@@ -270,22 +212,6 @@ async function callOne(base: string, key: string, row: Row): Promise<Outcome> {
   };
 }
 
-async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T, i: number) => Promise<R>): Promise<R[]> {
-  const out = new Array<R>(items.length);
-  let next = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, async () => {
-      for (;;) {
-        const i = next++;
-        const item = items[i];
-        if (item === undefined) return;
-        out[i] = await fn(item, i);
-      }
-    })
-  );
-  return out;
-}
-
 // ---------------------------------------------------------------------------
 // Report
 // ---------------------------------------------------------------------------
@@ -400,16 +326,14 @@ function report(results: Outcome[], meta: { base: string; csv: string; startedAt
 // ---------------------------------------------------------------------------
 
 async function main() {
-  const env = loadEnv();
-  const base = (arg("base", "https://personalize-api-umber.vercel.app") ?? "").replace(/\/$/, "");
-  const key = env.PERSONALIZE_API_KEY;
-  if (!key) throw new Error("PERSONALIZE_API_KEY missing.");
+  const base = apiBase();
+  const key = apiKey();
   const csv = arg("csv");
   if (!csv) throw new Error("--csv <path> is required.");
   const n = Number(arg("n", "400"));
   const seed = Number(arg("seed", "42"));
   const concurrency = Number(arg("concurrency", "6"));
-  const outDir = resolve(arg("out", join(ROOT, "test-runs/icp-benchmark")) ?? "");
+  const outDir = join(ROOT, "test-runs/icp-benchmark");
   mkdirSync(outDir, { recursive: true });
 
   const all = readRows(resolve(csv));

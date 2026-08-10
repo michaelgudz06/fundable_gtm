@@ -16,31 +16,10 @@
  * purely as classification inputs.
  */
 
-import { readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { apiBase, apiKey, flag } from "./lib.js";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-
-function loadEnv(): Record<string, string> {
-  const out: Record<string, string> = {};
-  try {
-    for (const line of readFileSync(join(ROOT, ".env"), "utf8").split("\n")) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-      if (m?.[1] && m[2] !== undefined) out[m[1]] = m[2].replace(/^["']|["']$/g, "");
-    }
-  } catch {
-    /* environment only */
-  }
-  return { ...out, ...process.env } as Record<string, string>;
-}
-
-const env = loadEnv();
-const BASE = (process.argv.includes("--base")
-  ? process.argv[process.argv.indexOf("--base") + 1]!
-  : "https://personalize-api-umber.vercel.app"
-).replace(/\/$/, "");
-const KEY = env.PERSONALIZE_API_KEY ?? "";
+const BASE = apiBase();
+const KEY = apiKey();
 
 type Res = { status: number; body: Record<string, unknown>; headers: Record<string, string> };
 
@@ -434,8 +413,7 @@ const CASES: Case[] = [
 // ---------------------------------------------------------------------------
 
 async function main() {
-  if (!KEY) throw new Error("PERSONALIZE_API_KEY missing.");
-  const only = process.argv.includes("--cheap") ? CASES.filter((c) => !c.costly) : CASES;
+  const only = flag("cheap") ? CASES.filter((c) => !c.costly) : CASES;
   process.stdout.write(`contract check: ${only.length} cases against ${BASE}\n\n`);
 
   let passed = 0;

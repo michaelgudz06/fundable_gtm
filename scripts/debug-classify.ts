@@ -10,21 +10,8 @@
  *   npx tsx scripts/debug-classify.ts --preset cre
  */
 
-import { readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-
-/** Loaded before any client reads process.env, which they do lazily per call. */
-function loadEnv(): void {
-  for (const line of readFileSync(join(ROOT, ".env"), "utf8").split("\n")) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-    if (m?.[1] && m[2] !== undefined && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-  }
-}
-
 import { classifyV2, researchTarget } from "../apps/api/src/lib/v2/classify";
+import { loadRootEnv } from "../packages/fundable-shared/src/env.js";
 import { answer, newExaLedger } from "@fundable/shared";
 
 type Probe = { name: string; email: string; title: string; company?: string };
@@ -70,7 +57,8 @@ async function probe(p: Probe) {
 }
 
 async function main() {
-  loadEnv();
+  // Loaded before any client reads process.env, which they do lazily per call.
+  loadRootEnv();
   const presetIdx = process.argv.indexOf("--preset");
   const probes: Probe[] =
     presetIdx >= 0
