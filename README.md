@@ -68,7 +68,7 @@ taken, and the HubSpot picklist value.
 ## Running it
 
 ```bash
-npm run verify     # typecheck every workspace + 121 offline tests + build
+npm run verify     # typecheck every workspace + 133 offline tests + build
 npm test           # offline only
 npm run dev        # localhost:3111
 ```
@@ -127,5 +127,5 @@ the first one moved CRE recall from 1/15 to 8/15.
 | [`docs/TESTSET.md`](docs/TESTSET.md) | the 29-row acceptance run and what it does *not* prove |
 | [`docs/SPEC-v2.md`](docs/SPEC-v2.md) | the spec this is built to |
 | [`FINDINGS.md`](FINDINGS.md) | 9 reproducible defects in the upstream Fundable API |
-| [`PRD.md`](PRD.md) · [`BUILD_LOG.md`](BUILD_LOG.md) | **history** — the v1 personalizer (`/api/personalize`, still in the tree) and its build log |
+| [`PRD.md`](PRD.md) · [`BUILD_LOG.md`](BUILD_LOG.md) | **history** — the v1 personalizer (`/api/personalize`, route since deleted; its streaming sibling `/api/personalize/stream` is still in the tree, serving `/demo`) and its build log |
 | [`AGENTS.md`](AGENTS.md) | the rules every agent session in this repo must follow |
