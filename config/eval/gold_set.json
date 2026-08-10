@@ -1,7 +1,7 @@
 {
-  "//": "Human-approved labels ONLY. A gold set our own classifier labelled would measure its own consistency, not its accuracy.",
-  "version": "3",
-  "frozen_at": "2026-08-01T08:37:17.112Z",
+  "//": "MIXED PROVENANCE — read approved_by per row. human-review rows carry a label a person chose; registry-derived rows are hard-rule fixtures whose answer follows from icp_registry.json and were never seen by a reviewer. Do not report a single accuracy number over both: the registry-derived rows also score the separate \"100% hard-rule fixtures\" clause, so counting them here lets one dataset satisfy two independent acceptance criteria.",
+  "version": "4",
+  "frozen_at": "2026-08-10T07:20:42.039Z",
   "rows": [
     {
       "id": "slice-personal-email",
@@ -451,7 +451,7 @@
       "title": "Account Executive",
       "company": "Mercury",
       "boundary_for": "startup_customers_required — confirmed side",
-      "approved_by": "human-review"
+      "approved_by": "registry-derived"
     },
     {
       "id": "hardrule-gate-4-unconfirmed",
@@ -460,7 +460,7 @@
       "title": "Account Executive",
       "company": "JPMorgan Chase",
       "boundary_for": "startup_customers_required — unconfirmed must fail closed",
-      "approved_by": "human-review"
+      "approved_by": "registry-derived"
     },
     {
       "id": "hardrule-gate-10-confirmed",
@@ -469,7 +469,7 @@
       "title": "Account Executive",
       "company": "Airwallex",
       "boundary_for": "startup_customers_required — cross-border, confirmed",
-      "approved_by": "human-review"
+      "approved_by": "registry-derived"
     },
     {
       "id": "hardrule-gate-10-unconfirmed",
@@ -478,7 +478,7 @@
       "title": "Account Executive",
       "company": "Western Union",
       "boundary_for": "startup_customers_required — cross-border, unconfirmed",
-      "approved_by": "human-review"
+      "approved_by": "registry-derived"
     },
     {
       "id": "hardrule-gate-13-confirmed",
@@ -487,7 +487,7 @@
       "title": "Account Executive",
       "company": "Vanta",
       "boundary_for": "startup_customers_required — compliance, confirmed",
-      "approved_by": "human-review"
+      "approved_by": "registry-derived"
     },
     {
       "id": "hardrule-gate-13-unconfirmed",
@@ -496,7 +496,7 @@
       "title": "Account Executive",
       "company": "Deloitte",
       "boundary_for": "startup_customers_required — compliance, unconfirmed",
-      "approved_by": "human-review"
+      "approved_by": "registry-derived"
     },
     {
       "id": "hardrule-gate-15-confirmed",
@@ -505,7 +505,7 @@
       "title": "Account Executive",
       "company": "Pilot",
       "boundary_for": "startup_customers_required — accounting, confirmed",
-      "approved_by": "human-review"
+      "approved_by": "registry-derived"
     },
     {
       "id": "hardrule-gate-17-startup-focus",
@@ -514,7 +514,7 @@
       "title": "Account Executive",
       "company": "Clerky",
       "boundary_for": "startup_focus gate — legal, confirmed",
-      "approved_by": "human-review"
+      "approved_by": "registry-derived"
     },
     {
       "id": "hardrule-gate-17-biglaw",
@@ -523,7 +523,7 @@
       "title": "Business Development Manager",
       "company": "Latham & Watkins",
       "boundary_for": "startup_focus gate — BigLaw must fail closed",
-      "approved_by": "human-review"
+      "approved_by": "registry-derived"
     },
     {
       "id": "hardrule-gate-11-falls-through-to-20",
@@ -532,7 +532,7 @@
       "title": "Head of Growth",
       "company": "Rippling",
       "boundary_for": "a rejected specific ICP falls through to the #20 catch-all, not to Not Core",
-      "approved_by": "human-review"
+      "approved_by": "registry-derived"
     },
     {
       "id": "hardrule-role-11-ineligible",
@@ -541,7 +541,7 @@
       "title": "Senior Software Engineer",
       "company": "Rippling",
       "boundary_for": "role gate — wrong function at the right company",
-      "approved_by": "human-review"
+      "approved_by": "registry-derived"
     },
     {
       "id": "hardrule-role-9-product",
@@ -550,7 +550,7 @@
       "title": "CTO",
       "company": "Clay",
       "boundary_for": "#6 vs #9 precedence is UNDEFINED in the registry — records current behaviour",
-      "approved_by": "human-review"
+      "approved_by": "registry-derived"
     },
     {
       "id": "hardrule-role-9-sales-is-not-9-but-5",
@@ -559,7 +559,7 @@
       "title": "Account Executive",
       "company": "Clay",
       "boundary_for": "#9 excludes GTM roles; a specific ICP still beats the #20 catch-all",
-      "approved_by": "human-review"
+      "approved_by": "registry-derived"
     },
     {
       "id": "hardrule-founder-venture",
@@ -568,7 +568,7 @@
       "title": "Co-Founder & CEO",
       "company": "Fal",
       "boundary_for": "#6 requires a venture-style startup",
-      "approved_by": "human-review"
+      "approved_by": "registry-derived"
     },
     {
       "id": "hardrule-exclusion-residential",
@@ -577,7 +577,7 @@
       "title": "Real Estate Broker",
       "company": "Compass",
       "boundary_for": "residential real estate excluded outright",
-      "approved_by": "human-review"
+      "approved_by": "registry-derived"
     },
     {
       "id": "hardrule-exclusion-public-market",
@@ -586,7 +586,7 @@
       "title": "Portfolio Manager",
       "company": "Bridgewater Associates",
       "boundary_for": "public-market investors excluded outright",
-      "approved_by": "human-review"
+      "approved_by": "registry-derived"
     },
     {
       "id": "hardrule-investor-core",
@@ -595,7 +595,7 @@
       "title": "General Partner",
       "company": "Andreessen Horowitz",
       "boundary_for": "#19 is core in v2, reversing the v1 VC exclusion",
-      "approved_by": "human-review"
+      "approved_by": "registry-derived"
     },
     {
       "id": "hardrule-investor-wrong-role",
@@ -604,7 +604,7 @@
       "title": "Recruiting Coordinator",
       "company": "Andreessen Horowitz",
       "boundary_for": "#19 role gate — non-investing staff at a fund",
-      "approved_by": "human-review"
+      "approved_by": "registry-derived"
     },
     {
       "id": "hardrule-cre-commercial",
@@ -613,7 +613,7 @@
       "title": "Executive Vice President",
       "company": "CBRE",
       "boundary_for": "#2 producer ladder at a commercial firm",
-      "approved_by": "human-review"
+      "approved_by": "registry-derived"
     },
     {
       "id": "hardrule-cre-non-producer",
@@ -622,14 +622,14 @@
       "title": "Director of Information Technology",
       "company": "CBRE",
       "boundary_for": "#2 default-deny — a seniority token alone is not enough",
-      "approved_by": "human-review"
+      "approved_by": "registry-derived"
     },
     {
       "id": "hardrule-freemail-no-title",
       "label": "Not Core ICP",
       "email": "someone.random@gmail.com",
       "boundary_for": "personal address with no title fails closed",
-      "approved_by": "human-review"
+      "approved_by": "registry-derived"
     }
   ]
 }

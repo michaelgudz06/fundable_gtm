@@ -253,6 +253,30 @@ async function main() {
   );
   L.push("");
 
+  // Provenance split. 21 of these rows are hard-rule fixtures whose expected
+  // answer follows from the registry, and they ALSO score the separate "100%
+  // hard-rule fixtures" clause. Blending them into one headline lets a single
+  // dataset satisfy two independent acceptance criteria, and inflates the
+  // number with rows the classifier is already tuned to pass. Report both.
+  const human = scored.filter((r) => r.row.approved_by !== "registry-derived");
+  const derived = scored.filter((r) => r.row.approved_by === "registry-derived");
+  const accOf = (rs: typeof scored) =>
+    rs.length
+      ? `${pct(rs.filter((r) => r.predicted === r.truth).length / rs.length)} (${rs.filter((r) => r.predicted === r.truth).length}/${rs.length})`
+      : "no rows";
+  L.push("## By provenance");
+  L.push("");
+  L.push("| rows | label chosen by | exact accuracy |");
+  L.push("|---|---|---|");
+  L.push(`| ${human.length} | a human | ${accOf(human)} |`);
+  L.push(`| ${derived.length} | the registry (hard-rule fixtures) | ${accOf(derived)} |`);
+  L.push("");
+  L.push(
+    "Quote the human row when asked how accurate the classifier is. The derived row " +
+      "restates the hard-rule suite and is not independent evidence."
+  );
+  L.push("");
+
   L.push("## Per label");
   L.push("");
   L.push("| label | support | precision | recall | F1 |");

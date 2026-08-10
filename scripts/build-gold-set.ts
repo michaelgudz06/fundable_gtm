@@ -396,7 +396,12 @@ function main() {
       ...(r.linkedin ? { linkedin: r.linkedin } : {}),
       ...(r.boundary_for ? { boundary_for: r.boundary_for } : {}),
       ...(r.slice ? { slice: r.slice } : {}),
-      approved_by: "human-review",
+      // Provenance must be true per row. This used to stamp "human-review" on
+      // every row unconditionally, including the 21 boundary rows that
+      // boundaryRowsFromHardRules() pre-approves — so 30% of a file headed
+      // "Human-approved labels ONLY" claimed a review that never happened, and
+      // the one field that would have exposed it was the field being overwritten.
+      approved_by: r.source === "hard-rules" ? "registry-derived" : "human-review",
     }));
     const setPath = join(outDir, "gold_set.json");
     const version = existsSync(setPath)
@@ -406,7 +411,7 @@ function main() {
       setPath,
       JSON.stringify(
         {
-          "//": "Human-approved labels ONLY. A gold set our own classifier labelled would measure its own consistency, not its accuracy.",
+          "//": "MIXED PROVENANCE — read approved_by per row. human-review rows carry a label a person chose; registry-derived rows are hard-rule fixtures whose answer follows from icp_registry.json and were never seen by a reviewer. Do not report a single accuracy number over both: the registry-derived rows also score the separate \"100% hard-rule fixtures\" clause, so counting them here lets one dataset satisfy two independent acceptance criteria.",
           version,
           frozen_at: new Date().toISOString(),
           rows,
