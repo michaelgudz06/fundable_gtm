@@ -11,7 +11,7 @@
     "typecheck": "tsc --build --force && npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "smoke": "npm run smoke --workspace @fundable/shared",
-    "verify:supabase": "tsx scripts/verify-supabase.ts",
+    "verify:db": "tsx scripts/verify-db.ts",
     "review": "tsx scripts/review-gold-set.ts",
     "review:status": "tsx scripts/review-gold-set.ts --status",
     "gold:build": "tsx scripts/build-gold-set.ts --approve",

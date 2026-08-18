@@ -30,6 +30,10 @@ async function errorCode(res: Response): Promise<string> {
   return j.error.code;
 }
 
+/** Both names are mandatory as of 2026-08-16, so every case that means to
+ *  prove a LATER gate has to clear this one first. */
+const NAMES = { first_name: "Sam", last_name: "Rivera" };
+
 describe("v1/personalize HTTP gates (offline)", () => {
   before(() => loadRootEnv());
 
@@ -91,14 +95,24 @@ describe("v1/personalize HTTP gates (offline)", () => {
   });
 
   test("422 UNKNOWN_TEMPLATE for an id not in the catalog", async () => {
-    const res = await post({ email: "a@b.co", message_type: "cold_outbound", template_id: "no_such_template" });
+    const res = await post({
+      email: "a@b.co",
+      message_type: "cold_outbound",
+      template_id: "no_such_template",
+      known_fields: NAMES,
+    });
     assert.equal(res.status, 422);
     assert.equal(await errorCode(res), "UNKNOWN_TEMPLATE");
   });
 
   test("422 TEMPLATE_MESSAGE_TYPE_CONFLICT when the template forbids the type", async () => {
     // website_visitor_use_case does not allow cold_outbound.
-    const res = await post({ email: "a@b.co", message_type: "cold_outbound", template_id: "website_visitor_use_case" });
+    const res = await post({
+      email: "a@b.co",
+      message_type: "cold_outbound",
+      template_id: "website_visitor_use_case",
+      known_fields: NAMES,
+    });
     assert.equal(res.status, 422);
     assert.equal(await errorCode(res), "TEMPLATE_MESSAGE_TYPE_CONFLICT");
   });
@@ -108,6 +122,7 @@ describe("v1/personalize HTTP gates (offline)", () => {
       email: "a@b.co",
       message_type: "cold_outbound",
       email_template: "<p>Hey {{greeting}}</p>",
+      known_fields: NAMES,
     });
     assert.equal(res.status, 422);
     assert.equal(await errorCode(res), "TEMPLATE_VALIDATION_FAILED");

@@ -76,16 +76,3 @@ export function findUnsupportedClaims(post: string, supportingNumbers: string[])
     return true;
   });
 }
-
-export function correctionPrompt(issues: ClaimIssue[]): string {
-  const list = issues.map((i) => `- "${i.quote}"  →  ${i.reason}`).join("\n");
-  return `That draft contains claims the data does not support:
-
-${list}
-
-Rewrite the post. Keep the same structure, the same companies, and the same numbers from the rows. Remove or replace every flagged claim with something the rows actually prove, or with opinion that is clearly opinion ("underrated", "the ones we're watching").
-
-Remember: you only have data for the one slice you were given. You know nothing about other sectors, other cities, or previous periods. Do not compare to them at all.
-
-Return only the corrected post text.`;
-}

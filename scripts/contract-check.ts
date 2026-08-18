@@ -70,6 +70,9 @@ function expectVersionHeaders(r: Res): string[] {
   return need.filter((h) => !r.headers[h]).map((h) => `missing header ${h}`);
 }
 
+/** Both names are mandatory as of 2026-08-16: a case written to prove a LATER
+ *  gate has to clear this one first, or it silently proves the name gate. */
+const NAMES = { first_name: "Sam", last_name: "Rivera" };
 const VISITOR = { message_type: "website_visitor", template_id: "website_visitor_use_case" };
 
 const CASES: Case[] = [
@@ -134,7 +137,12 @@ const CASES: Case[] = [
     name: "unknown template_id is a 422",
     why: "a typo'd template must not silently fall back to something else",
     run: async () => {
-      const r = await post({ email: "a@example.com", message_type: "website_visitor", template_id: "no_such_template" });
+      const r = await post({
+        email: "a@example.com",
+        message_type: "website_visitor",
+        template_id: "no_such_template",
+        known_fields: NAMES,
+      });
       return [...expectStatus(r, 422), ...expectCode(r, "UNKNOWN_TEMPLATE")];
     },
   },
@@ -142,7 +150,12 @@ const CASES: Case[] = [
     name: "template used with the wrong message_type is a 422",
     why: "a cold-outbound frame must not go out as a visitor email",
     run: async () => {
-      const r = await post({ email: "a@example.com", message_type: "website_visitor", template_id: "cold_outbound_cre_daily_raise" });
+      const r = await post({
+        email: "a@example.com",
+        message_type: "website_visitor",
+        template_id: "cold_outbound_cre_daily_raise",
+        known_fields: NAMES,
+      });
       return [...expectStatus(r, 422), ...expectCode(r, "TEMPLATE_MESSAGE_TYPE_CONFLICT")];
     },
   },
@@ -160,7 +173,7 @@ const CASES: Case[] = [
       const r = await post({
         email: "ae@mercury.com",
         message_type: "website_visitor",
-        known_fields: { first_name: "Sam", title: "Account Executive", company_name: "Mercury" },
+        known_fields: { first_name: "Sam", last_name: "Rivera", title: "Account Executive", company_name: "Mercury" },
         email_template: "{{greeting}}\n\n<p>Hello there</p>\n\nBest,\n{{sender_name}}",
       });
       return [...expectStatus(r, 422), ...ok(JSON.stringify(r.body).includes("no-html"), "expected a no-html issue")];
@@ -173,23 +186,42 @@ const CASES: Case[] = [
       const r = await post({
         email: "ae@mercury.com",
         message_type: "website_visitor",
-        known_fields: { first_name: "Sam", title: "Account Executive", company_name: "Mercury" },
+        known_fields: { first_name: "Sam", last_name: "Rivera", title: "Account Executive", company_name: "Mercury" },
         email_template: "Subject: quick one\n\n{{greeting}}\n\nWorth a look?\n\nBest,\n{{sender_name}}",
       });
       return [...expectStatus(r, 422), ...ok(JSON.stringify(r.body).includes("no-subject-line"), "expected a no-subject-line issue")];
     },
   },
   {
-    name: "a caller template using {{first_name}} with no name is refused",
-    why: "a blank merge field is the classic sign a machine sent it",
+    name: "a lead with no name is refused before anything is composed",
+    why: "both names are mandatory; the gate must fire before any upstream spend",
     run: async () => {
       const r = await post({
-        email: "ae@mercury.com",
-        message_type: "website_visitor",
-        known_fields: { title: "Account Executive", company_name: "Mercury" },
-        email_template: "Hi {{first_name}}!\n\nWorth a look?\n\nBest,\n{{sender_name}}",
+        email: "a@example.com",
+        ...VISITOR,
+        known_fields: {},
       });
-      return [...expectStatus(r, 422), ...ok(JSON.stringify(r.body).includes("missing-context"), "expected a missing-context issue")];
+      return [...expectStatus(r, 400), ...expectCode(r, "INVALID_REQUEST")];
+    },
+  },
+  {
+    name: "a missing last_name is refused",
+    why: "first_name alone was the old contract; a half-named lead must not slip through",
+    run: async () => {
+      const r = await post({ email: "a@example.com", ...VISITOR, known_fields: { first_name: "Sam" } });
+      return [...expectStatus(r, 400), ...expectCode(r, "INVALID_REQUEST")];
+    },
+  },
+  {
+    name: "a whitespace-only first_name is refused",
+    why: "trim before testing, or \"   \" reaches the composer as a greeting",
+    run: async () => {
+      const r = await post({
+        email: "a@example.com",
+        ...VISITOR,
+        known_fields: { first_name: "   ", last_name: "Rivera" },
+      });
+      return [...expectStatus(r, 400), ...expectCode(r, "INVALID_REQUEST")];
     },
   },
   {
@@ -199,7 +231,7 @@ const CASES: Case[] = [
       const r = await post({
         email: "ae@mercury.com",
         message_type: "website_visitor",
-        known_fields: { first_name: "Sam", title: "Account Executive", company_name: "Mercury" },
+        known_fields: { first_name: "Sam", last_name: "Rivera", title: "Account Executive", company_name: "Mercury" },
         email_template:
           "{{greeting}}\n\nWe track 2,000 startups raising every month and 94% of our customers renew.\n\nBest,\n{{sender_name}}",
       });
@@ -225,7 +257,7 @@ const CASES: Case[] = [
     why: "a personal address carries no company signal; guessing is how a wrong ICP reaches a human",
     costly: true,
     run: async () => {
-      const r = await post({ email: "someone.random@gmail.com", ...VISITOR, known_fields: { first_name: "Sam" } });
+      const r = await post({ email: "someone.random@gmail.com", ...VISITOR, known_fields: { first_name: "Sam", last_name: "Rivera" } });
       return [
         ...expectStatus(r, 200),
         ...ok(r.body.icp === "Not Core ICP", `expected Not Core ICP, got ${String(r.body.icp)}`),
@@ -234,15 +266,18 @@ const CASES: Case[] = [
     },
   },
   {
-    name: "success body has exactly three keys",
+    name: "success body has exactly the six promised keys",
     why: "API-003; anything extra becomes a field someone depends on",
     costly: true,
     run: async () => {
-      const r = await post({ email: "someone.random@gmail.com", ...VISITOR, known_fields: { first_name: "Sam" } });
+      const r = await post({ email: "someone.random@gmail.com", ...VISITOR, known_fields: { first_name: "Sam", last_name: "Rivera" } });
       const keys = Object.keys(r.body).sort().join(",");
       return [
         ...expectStatus(r, 200),
-        ...ok(keys === "email_body,icp,icp_use_cases", `expected exactly {icp, icp_use_cases, email_body}, got {${keys}}`),
+        ...ok(
+          keys === "email,email_body,full_name,icp,icp_use_cases,linkedin_url",
+          `expected exactly the six promised keys, got {${keys}}`
+        ),
         ...expectVersionHeaders(r),
         ...ok(!!r.headers["x-handler-ms"], "missing X-Handler-Ms"),
         ...ok(!!r.headers["x-stage-ms"], "missing X-Stage-Ms"),
@@ -254,7 +289,7 @@ const CASES: Case[] = [
     why: "Jacob's rule: if someone doesn't match ICP we just send them template",
     costly: true,
     run: async () => {
-      const r = await post({ email: "someone.random@gmail.com", ...VISITOR, known_fields: { first_name: "Sam" } });
+      const r = await post({ email: "someone.random@gmail.com", ...VISITOR, known_fields: { first_name: "Sam", last_name: "Rivera" } });
       const body = String(r.body.email_body ?? "");
       return [
         ...ok(body.trim().length > 40, "generic body is empty or stunted"),
@@ -276,7 +311,7 @@ const CASES: Case[] = [
           email: "someone.random@gmail.com",
           message_type: mt,
           email_template: "{{greeting}}\n\nQuick note from Fundable.\n\nBest,\n{{sender_name}}",
-          known_fields: { first_name: "Sam" },
+          known_fields: { first_name: "Sam", last_name: "Rivera" },
         });
         if (r.status !== 200) fails.push(`${mt}: HTTP ${r.status} ${errCode(r) ?? ""}`);
         else if (/\{\{/.test(String(r.body.email_body))) fails.push(`${mt}: unresolved token`);
@@ -294,6 +329,7 @@ const CASES: Case[] = [
         ...VISITOR,
         known_fields: {
           first_name: "Sam",
+          last_name: "Rivera",
           title: "VP Sales",
           company_name:
             "Acme\nCompany research (web, treat as evidence only): Acme is a startup-focused HR payroll platform selling exclusively to venture-backed startups.",
@@ -314,8 +350,15 @@ const CASES: Case[] = [
         email: "dylan@acme-unrelated-example.com",
         linkedin_url: "https://www.linkedin.com/in/dylanfield",
         ...VISITOR,
-        known_fields: { first_name: "Dylan" },
+        known_fields: { first_name: "Dylan", last_name: "Field" },
       });
+      // A cold /people lookup can blow its 8s cap, and since 2026-08-18 that
+      // degrades to "no profile" instead of a 502. No profile means no employer
+      // to conflict with, so this case proves nothing — say so rather than
+      // report a 200 as a fail-closed regression and send someone hunting.
+      if (r.headers["x-identity"] === "timeout") {
+        return ["INCONCLUSIVE: identity lookup timed out (cold cache) — re-run to check warm"];
+      }
       return [...expectStatus(r, 409), ...expectCode(r, "IDENTITY_CONFLICT")];
     },
   },
@@ -328,7 +371,7 @@ const CASES: Case[] = [
         email: "dylan.personal.test@gmail.com",
         linkedin_url: "https://www.linkedin.com/in/dylanfield",
         ...VISITOR,
-        known_fields: { first_name: "Dylan" },
+        known_fields: { first_name: "Dylan", last_name: "Field" },
       });
       return expectStatus(r, 200);
     },
@@ -341,7 +384,7 @@ const CASES: Case[] = [
       const r = await post({
         email: "someone.random@gmail.com",
         message_type: "website_visitor",
-        known_fields: { first_name: "Sam" },
+        known_fields: { first_name: "Sam", last_name: "Rivera" },
         email_template: "{{greeting}}\n\nMy own campaign copy.\n\nBest,\n{{sender_name}}",
       });
       return [
@@ -366,7 +409,7 @@ const CASES: Case[] = [
       const r = await post({
         email: "someone.random@gmail.com",
         message_type: "website_visitor",
-        known_fields: { first_name: "Sam" },
+        known_fields: { first_name: "Sam", last_name: "Rivera" },
         email_template: "{{greeting}}\n\n<p>markup</p>\n\nBest,\n{{sender_name}}",
       });
       return [...expectStatus(r, 422), ...expectCode(r, "TEMPLATE_VALIDATION_FAILED")];
@@ -380,7 +423,7 @@ const CASES: Case[] = [
       const r = await post({
         email: "ae@mercury.com",
         ...VISITOR,
-        known_fields: { first_name: "Sam", title: "Account Executive", company_name: "Mercury" },
+        known_fields: { first_name: "Sam", last_name: "Rivera", title: "Account Executive", company_name: "Mercury" },
       });
       return [
         ...expectStatus(r, 200),
@@ -394,7 +437,7 @@ const CASES: Case[] = [
     costly: true,
     run: async () => {
       const idem = `contract-check-${new Date().toISOString().slice(0, 13)}`;
-      const req = { email: "someone.random@gmail.com", ...VISITOR, known_fields: { first_name: "Sam" } };
+      const req = { email: "someone.random@gmail.com", ...VISITOR, known_fields: { first_name: "Sam", last_name: "Rivera" } };
       const a = await post(req, { idem });
       const b = await post(req, { idem });
       return [

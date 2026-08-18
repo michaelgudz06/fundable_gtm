@@ -26,69 +26,14 @@
  */
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+import { ROOT, loadEnv, arg, mapLimit, parseCsv } from "./lib.js";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const arg = (n: string, d?: string) => {
-  const i = process.argv.indexOf(`--${n}`);
-  if (i < 0) return d;
-  const v = process.argv[i + 1];
-  return v !== undefined && !v.startsWith("--") ? v : d;
-};
-
-function loadEnv(): Record<string, string> {
-  const out: Record<string, string> = {};
-  try {
-    for (const line of readFileSync(join(ROOT, ".env"), "utf8").split("\n")) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-      if (m?.[1] && m[2] !== undefined) out[m[1]] = m[2].replace(/^["']|["']$/g, "");
-    }
-  } catch {
-    /* env only */
-  }
-  return { ...out, ...process.env } as Record<string, string>;
-}
 const env = loadEnv();
 const KEY = env.PERSONALIZE_API_KEY ?? "";
 const BASE = (arg("base", "http://localhost:3111") ?? "").replace(/\/$/, "");
 
 // --- CSV ---------------------------------------------------------------------
-
-function parseCsv(text: string): Record<string, string>[] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = "";
-  let quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i]!;
-    if (quoted) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') {
-          cell += '"';
-          i++;
-        } else quoted = false;
-      } else cell += ch;
-    } else if (ch === '"') quoted = true;
-    else if (ch === ",") {
-      row.push(cell);
-      cell = "";
-    } else if (ch === "\n") {
-      row.push(cell);
-      rows.push(row);
-      row = [];
-      cell = "";
-    } else if (ch !== "\r") cell += ch;
-  }
-  if (cell || row.length) {
-    row.push(cell);
-    rows.push(row);
-  }
-  const hdr = (rows.shift() ?? []).map((h) => h.replace(/^﻿/, "").trim());
-  return rows
-    .filter((r) => r.some((c) => c.trim()))
-    .map((r) => Object.fromEntries(hdr.map((h, i) => [h, (r[i] ?? "").trim()])));
-}
 
 /** The export packs label and rationale into one cell: "ICP #6: Founder — because…". */
 function refLabel(r: Record<string, string>): string {
@@ -126,21 +71,6 @@ async function classify(r: Record<string, string>, arm: Arm): Promise<string | n
     }
   }
   return null;
-}
-
-async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T, i: number) => Promise<R>): Promise<R[]> {
-  const out = new Array<R>(items.length);
-  let next = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, async () => {
-      for (;;) {
-        const i = next++;
-        if (i >= items.length) return;
-        out[i] = await fn(items[i]!, i);
-      }
-    })
-  );
-  return out;
 }
 
 // --- main --------------------------------------------------------------------

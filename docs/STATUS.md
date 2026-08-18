@@ -23,7 +23,7 @@ core-ICP recall.
 
 | clause | | evidence |
 |---|---|---|
-| Same normalized identity → same label on every caller | **pass** | `/api/classify` and `/api/v1/personalize` share one version-keyed cached decision. A fixture caught the earlier bug where `/api/classify` re-voted per call. |
+| Same normalized identity → same label on every caller | **pass** | `/api/classify` and `/api/v1/personalize` share one version-keyed cached decision. A fixture caught the earlier bug where `/api/classify` re-voted per call. Note the clause holds *only while storage is reachable*: with `DATABASE_URL` unset the cache degrades to `NoopStorage` and every call re-votes. It was silently false for weeks against a dead Supabase project; `npm run verify:db` is how you check. |
 | 100% hard-rule fixtures | **pass** | 21/21 live (`scripts/run-hard-rules.ts`) |
 | Zero critical grounding / template failures | **pass** | 26/26 live contract cases |
 | 100% schema-valid; no unresolved variables; no empty-name greetings | **pass** | 26/26 live + 123 offline tests |
@@ -47,6 +47,7 @@ The Orange Slice export carries these fields:
 | LinkedIn URL | 98.8% |
 
 Every benchmark this project produced assumed otherwise. `run-icp-benchmark`
+(deleted 2026-08-16, along with `run-with-titles` and `diagnose-title-gap`)
 stated it in its own header — *"This API received only an email and a LinkedIn
 URL"* — and the ceiling test scraped titles out of the reference classifier's
 reasoning prose rather than reading the column sitting next to it. The

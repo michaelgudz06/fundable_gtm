@@ -173,11 +173,15 @@ export default function DemoPage() {
     // .env and only one of them opens this door, so "Invalid bearer token" is a
     // uselessly vague thing to say when the paste is recognisably a different
     // key. Prefix matching only — nothing is logged or sent anywhere.
+    //
+    // The database entry earns its place twice over now: a Supabase key could be
+    // revoked from a dashboard, but DATABASE_URL is host, user and password in
+    // one string, and pasting it here would put it in a browser.
     const MISTAKEN: { prefix: string; name: string; role: string }[] = [
       { prefix: "vg_", name: "Fundable API key", role: "the server calls Fundable itself using the value in .env" },
       { prefix: "sk-or-v1-", name: "OpenRouter key", role: "the server calls OpenRouter itself using the value in .env" },
-      { prefix: "sb_secret_", name: "Supabase secret key", role: "the server uses it for the cache and request log" },
-      { prefix: "sb_publishable_", name: "Supabase publishable key", role: "not used by this demo at all" },
+      { prefix: "postgresql://", name: "Neon connection string", role: "the server uses it for the cache and request log — it is server-side only, so do not paste it into a browser" },
+      { prefix: "postgres://", name: "Neon connection string", role: "the server uses it for the cache and request log — it is server-side only, so do not paste it into a browser" },
     ];
     const mistake = MISTAKEN.find((m) => candidate.startsWith(m.prefix));
     if (mistake) {
@@ -323,7 +327,7 @@ export default function DemoPage() {
           <p>
             Internal tool. Paste <code>PERSONALIZE_API_KEY</code>{" "}
             — this API&apos;s own bearer key, a 64-character hex string. <strong>Not</strong> your
-            Fundable, OpenRouter, or Supabase key: the server calls those itself using the values in{" "}
+            Fundable, OpenRouter, or database key: the server calls those itself using the values in{" "}
             <code>.env</code>. Held in memory only, so a refresh forgets it.
           </p>
           <input

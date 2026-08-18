@@ -10,6 +10,7 @@
 
 import {
   blockingIssues,
+  DeadlineError,
   isFreemail,
   newLedger,
   normalizeDomain,
@@ -38,6 +39,7 @@ import {
   type TemplateEntry,
   type UseCase,
 } from "./registry";
+import { resolveLinkedIn } from "./resolve-linkedin";
 
 /** Per-leg upstream timings, reported on every response as X-Stage-Ms. */
 export type Trace = {
@@ -54,13 +56,26 @@ export type Trace = {
   modelServed: string;
   /** alert | mcp | none — which frame the body was composed from. */
   useCaseType: string;
+  /** Which n8n cascade branch found the profile, "" when none ran. */
+  linkedinSource: string;
+  /** The Fundable lookup blew its 8s cap; the lead was classified without it. */
+  identityTimedOut: boolean;
 };
 
 export type Decision =
   | {
       ok: true;
-      /** EXACTLY the three success keys (API-003). */
-      success: { icp: string; icp_use_cases: UseCase[]; email_body: string };
+      /** EXACTLY the six success keys (API-003). full_name, email and
+       *  linkedin_url were added for Jacob's v2 shape; the three original keys
+       *  are unchanged, so no existing reader breaks. */
+      success: {
+        full_name: string;
+        email: string;
+        linkedin_url: string | null;
+        icp: string;
+        icp_use_cases: UseCase[];
+        email_body: string;
+      };
       usage: Usage[];
       warnings: string[];
     }
@@ -80,19 +95,45 @@ const PERSON_TTL_MS = 30 * 24 * 60 * 60 * 1000;
  * A miss is cached too: "this LinkedIn URL is not in Fundable" is a stable
  * answer, and without it every unknown lead pays the slow path on every send.
  */
-async function personCached(
+/** Exported only so the timeout-degrade regression test can reach it directly;
+ *  composing that case through decide() would need the whole registry. */
+export async function personCached(
   linkedin: string,
   ledger: ReturnType<typeof newLedger>
-): Promise<{ person: Awaited<ReturnType<typeof personByLinkedIn>>["person"] }> {
+): Promise<{ person: Awaited<ReturnType<typeof personByLinkedIn>>["person"]; timedOut: boolean }> {
   const storage = getStorage();
   const key = `person:${normalizeLinkedIn(linkedin) ?? linkedin.trim().toLowerCase()}`;
   const hit = (await storage.cacheGet(key, "fundable")) as { person: unknown } | null;
   if (hit && typeof hit === "object" && "person" in hit) {
-    return { person: hit.person as never };
+    return { person: hit.person as never, timedOut: false };
   }
-  const { person } = await personByLinkedIn(linkedin, ledger);
+
+  let person: Awaited<ReturnType<typeof personByLinkedIn>>["person"];
+  try {
+    ({ person } = await personByLinkedIn(linkedin, ledger));
+  } catch (e) {
+    // `LEG_TIMEOUT_MS.fundable` is documented as degrading to "not resolved",
+    // and until this catch existed it did not. /people is 19s cold against an
+    // 8s cap, so the FIRST request for any uncached person escaped as a 502 and
+    // the caller lost the whole lead over a lookup it can survive without. The
+    // live contract check caught it the moment prod ran on an empty cache
+    // (2026-08-18) — two costly cases, both the ones that pass a linkedin_url.
+    //
+    // Degrading is safe for ID-004 specifically because it is all-or-nothing:
+    // without the profile we take no title, no company, and no employer from
+    // it, so there is nothing to conflict with and nothing to personalize
+    // wrongly. The lead falls back to the email-domain research path that a
+    // lead with no LinkedIn already takes.
+    //
+    // Only OUR deadline degrades. A FundableError — a dead key, a 4xx — is a
+    // real misconfiguration and must still surface as a 502. Nothing is cached
+    // here either: a timeout is not an answer about this person.
+    if (e instanceof DeadlineError) return { person: null, timedOut: true };
+    throw e;
+  }
+
   await storage.cacheSet(key, "fundable", { person: person ?? null }, PERSON_TTL_MS);
-  return { person };
+  return { person, timedOut: false };
 }
 
 export async function decide(input: {
@@ -103,6 +144,13 @@ export async function decide(input: {
   /** The caller's own template text (already structurally validated), or null. */
   rawTemplate: string | null;
   linkedin: string | undefined;
+  /** Both mandatory as of 2026-08-16 — the route rejects a lead without them. */
+  firstName: string;
+  lastName: string;
+  /** The PERSON's location ("Vancouver, BC"), not a sales territory. Only the
+   *  find-LinkedIn cascade reads it, to tell two people of the same name apart;
+   *  it never reaches the composer. */
+  location: string | undefined;
   knownFields: Record<string, unknown>;
   additionalContext: Record<string, unknown>;
   deadlineAt: number;
@@ -110,7 +158,9 @@ export async function decide(input: {
   exa: ExaLedger;
   trace: Trace;
 }): Promise<Decision> {
-  const { email, messageType, template, rawTemplate, linkedin, deadlineAt, fundable, exa, trace } = input;
+  const { email, messageType, template, rawTemplate, deadlineAt, fundable, exa, trace } = input;
+  const { firstName, lastName, location } = input;
+  let linkedin = input.linkedin;
   const kf = input.knownFields;
   const ctxIn = input.additionalContext;
 
@@ -135,8 +185,9 @@ export async function decide(input: {
 
   if (linkedin) {
     const tIdentity = Date.now();
-    const { person } = await personCached(linkedin, fundable);
+    const { person, timedOut } = await personCached(linkedin, fundable);
     trace.identity = Date.now() - tIdentity;
+    trace.identityTimedOut = timedOut;
     if (person) {
       title = title ?? person.title ?? undefined;
       company = company ?? person.current_company?.name ?? undefined;
@@ -160,6 +211,25 @@ export async function decide(input: {
       // For a personal address the profile's employer is the best evidence we
       // have — better than the caller's assertion, and far better than a name.
       if (employerDomain && isFreemail(emailDomain)) researchDomain = employerDomain;
+    }
+  } else {
+    // Step 1 of Jacob's flow: no LinkedIn, so go find one. Skipped entirely
+    // when the caller supplied a URL, which both live surfaces do.
+    //
+    // No personCached follow-up on the resolved URL. The cascade already
+    // returns the title and company that lookup would have supplied, and
+    // spending another 8s leg plus a Fundable credit to re-learn a fact we are
+    // holding would be the whole latency budget for nothing.
+    const tResolve = Date.now();
+    const found = await resolveLinkedIn({ email, firstName, lastName, location, deadlineAt });
+    trace.identity = Date.now() - tResolve;
+    if (found) {
+      linkedin = found.linkedin_url;
+      trace.linkedinSource = found.source;
+      // Gap-filling only: the caller's own assertion still wins, because they
+      // know their lead and the cascade is inferring.
+      title = title ?? found.title;
+      company = company ?? found.company;
     }
   }
 
@@ -199,7 +269,7 @@ export async function decide(input: {
   // Context is typed and allowlisted (CTX-001): unknown keys are ignored, and
   // nothing here can override policy because policy never reads it.
   const ctx: ComposeContext = {
-    first_name: typeof kf.first_name === "string" ? kf.first_name.trim() || undefined : undefined,
+    first_name: firstName,
     company_name: company,
     territory: typeof ctxIn.territory === "string" ? ctxIn.territory.trim() || undefined : undefined,
     target_buyer_role:
@@ -277,10 +347,19 @@ export async function decide(input: {
     return fail(502, "OUTPUT_VALIDATION_FAILED", "Final body failed validation.", finalIssues);
   }
 
-  // ---- success: EXACTLY three keys (API-003) --------------------------------
+  // ---- success: EXACTLY six keys (API-003) ----------------------------------
   return {
     ok: true,
-    success: { icp: cls.label, icp_use_cases: useCases, email_body: emailBody },
+    success: {
+      full_name: `${firstName} ${lastName}`,
+      email,
+      // Either the caller's URL or the one the cascade approved — never a
+      // candidate it rejected, and null when neither exists.
+      linkedin_url: linkedin ?? null,
+      icp: cls.label,
+      icp_use_cases: useCases,
+      email_body: emailBody,
+    },
     usage: cls.usage,
     warnings: cls.warnings,
   };

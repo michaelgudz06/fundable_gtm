@@ -18,25 +18,16 @@ export {
 } from "./deadline.js";
 export type { Budgeted } from "./deadline.js";
 
-// Curated alias tables. Fundable's search endpoints are literal name lookups
-// with no relevance ranking, and a bad permalink is silently dropped, so these
-// are what keep a filter from quietly vanishing.
-export { INDUSTRY_ALIASES, LOCATION_ALIASES, ROUND_EXPANSIONS, ROUND_PHRASES } from "./aliases.js";
-export type { Alias } from "./aliases.js";
-
 // Fundable REST client.
 export {
   FundableError,
-  MAX_COMPANIES_PER_DEALS_CALL,
   call,
   cityOf,
   companiesByDomains,
   companyByDomain,
   dealDate,
-  daysAgo,
   dealsForCompany,
   firstNameOf,
-  investmentStages,
   investorsByIds,
   leadInvestorProse,
   money,
@@ -46,9 +37,6 @@ export {
   normalizeLinkedIn,
   peopleByLinkedIn,
   personByLinkedIn,
-  resolveIndustry,
-  resolveLocation,
-  resolveRounds,
   roundLabel,
 } from "./fundable.js";
 export type {
@@ -58,7 +46,6 @@ export type {
   Deal,
   DealSort,
   EmbeddedDeal,
-  FinancingType,
   Investor,
   Ledger,
   Location,
@@ -95,8 +82,9 @@ export type { ChatMessage, CompleteOpts, CompleteResult, Usage } from "./openrou
 
 // Claim checking. `claims.ts` is the verbatim port from post-studio (unsupported
 // comparisons); `verify.ts` adds the evidence-grounded checking cold outbound
-// needs. Both correction prompts are exported, disambiguated by name.
-export { findUnsupportedClaims, correctionPrompt as comparisonCorrectionPrompt } from "./claims.js";
+// needs. Only verify.ts's correction prompt has a consumer, so only it is
+// re-exported — under its disambiguated name, since both files define one.
+export { findUnsupportedClaims } from "./claims.js";
 export type { ClaimIssue } from "./claims.js";
 
 export { blockingIssues, correctionPrompt as verifyCorrectionPrompt, verifyCopy } from "./verify.js";

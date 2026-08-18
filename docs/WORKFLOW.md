@@ -76,21 +76,51 @@ POST /api/v1/personalize
   "message_type": "website_visitor",
   "template_id": "website_visitor_use_case",
   "known_fields": {
-    "first_name": "Reed",
+    "first_name": "Reed",                // required
+    "last_name": "Stillman",             // required
     "title": "VP, Investment Sales",     // ← the one that matters
     "company_name": "Example CRE",
-    "company_domain": "example-cre.com"  // used when the address is personal
+    "company_domain": "example-cre.com", // used when the address is personal
+    "location": "Vancouver, BC"          // the PERSON's location, see below
   },
   "additional_context": { "sender_name": "Jacob" }
 }
 ```
 
 Send an `Idempotency-Key` per (person, campaign). A retried webhook then
-replays the identical body instead of writing a second, different email.
+replays the identical body instead of writing a second, different email. The
+key is namespaced by the request body, so reusing one key for a *different*
+lead recomputes rather than handing you the first lead's email — check for
+`X-Idempotent-Replay: true` if you need to know which happened.
 
-Response is exactly three keys — `icp`, `icp_use_cases`, `email_body` — plus
-headers worth logging: `X-Body-Source`, `X-Icp-Registry-Version`,
-`X-Prompt-Version`, `X-Handler-Ms`, `X-Stage-Ms`.
+Response is exactly six keys — `full_name`, `email`, `linkedin_url`, `icp`,
+`icp_use_cases`, `email_body` — plus headers worth logging: `X-Body-Source`,
+`X-Icp-Registry-Version`, `X-Prompt-Version`, `X-Handler-Ms`, `X-Stage-Ms`.
+
+### 3b. Find-LinkedIn, when the caller has no URL
+
+Omit `linkedin_url` and the route calls the n8n `Resolve LinkedIn Profile`
+workflow (`bpx0okgj6Tslhwcb`) before classifying: Quick Enrich reverse-email →
+AI Ark people search → Apollo `people/match` → Exa search judged by Gemini. Set
+`N8N_LINKEDIN_WEBHOOK_URL`; leave it unset and the step no-ops, which is the
+correct behaviour for both live surfaces since they already send a URL.
+
+Three properties worth knowing before you rely on it:
+
+- **`linkedinApproved` is the only field that authorises the URL.** Each branch
+  sets it deliberately and the Gemini judge is instructed to reject rather than
+  guess. A URL arriving unapproved is a *rejected candidate*, and this route
+  discards it.
+- **It also returns title and company.** That is the bigger prize: core recall
+  runs 13% → 36% when a title is present (see below). No `/people` lookup
+  follows a resolved URL — the cascade already answered that question.
+- **It is fail-soft and capped at 6s.** Timeout, 500, unset env: all mean the
+  lead is classified from its email alone. `X-Linkedin-Source` reports which
+  vendor answered, and is absent when the step did not run.
+
+`known_fields.location` — the person's location, not `additional_context.
+territory` — is forwarded so the judge can tell two people with the same name
+apart. It never reaches the email copy.
 
 ### 4. Routing the result
 
@@ -250,12 +280,13 @@ which is why identity lookups are cached and why nothing waits behind them.
 Three suites, three questions:
 
 ```bash
-npm run verify                           # typecheck + 133 offline tests + build
+npm run verify                           # typecheck + 140 offline tests + build
 npx tsx scripts/contract-check.ts        # does the API behave to spec? (26 cases)
 npx tsx scripts/evaluate-gold-set.ts     # macro-F1 / Not Core precision vs the baseline
 npx tsx scripts/run-testset.ts           # does it agree with Jacob's hand calls? (29 rows)
 npx tsx scripts/run-icp-benchmark.ts --csv <export.csv> --n 400   # accuracy vs a labelled export
-npm test                                 # 133 offline tests
+npx tsx scripts/benchmark-real-titles.ts --csv <export.csv>   # paired bare/titled recall
+npm test                                 # 140 offline tests
 ```
 
 `contract-check` runs cheap cases first, so a broken deploy fails in seconds.

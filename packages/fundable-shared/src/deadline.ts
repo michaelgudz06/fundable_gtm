@@ -28,6 +28,26 @@ export const LEG_TIMEOUT_MS = {
   exa: 10_000,
   /** One classifier vote. Votes run concurrently and resolve on the first two that agree. */
   model: 12_000,
+  /**
+   * Cache read/write and the request log. Much tighter than the others because
+   * storage is optional by design — every method already degrades to "no cache"
+   * — so a slow database must cost less than the call it was meant to save.
+   *
+   * This cap is the fix for a real outage: the Supabase project was gone, and
+   * because these calls used a bare fetch with no timeout, every request paid
+   * the full connection failure three times over instead of failing fast. 2s
+   * clears a Neon cold resume (scale-to-zero, a few hundred ms) with room.
+   */
+  storage: 2_000,
+  /**
+   * The n8n find-LinkedIn workflow. Four vendors in sequence plus an LLM judge,
+   * so the worst case is well past this cap — deliberately. The step is
+   * fail-soft: exceeding the cap costs the LinkedIn URL, not the request, and
+   * the lead falls back to the email-only path it takes today. Blowing the SLO
+   * to chase a fourth-fallback match is the wrong trade when the first two
+   * vendors answer in about a second.
+   */
+  n8n: 6_000,
 } as const;
 
 /**

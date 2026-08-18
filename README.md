@@ -68,7 +68,7 @@ taken, and the HubSpot picklist value.
 ## Running it
 
 ```bash
-npm run verify     # typecheck every workspace + 133 offline tests + build
+npm run verify     # typecheck every workspace + 140 offline tests + build
 npm test           # offline only
 npm run dev        # localhost:3111
 ```
@@ -78,7 +78,8 @@ Live suites (need a deployment and real upstream spend):
 ```bash
 npx tsx scripts/contract-check.ts                     # 26 API-behaviour cases
 npx tsx scripts/run-testset.ts                        # 29 hand-labelled rows
-npx tsx scripts/run-icp-benchmark.ts --csv <export>   # accuracy vs a labelled export
+npx tsx scripts/run-hard-rules.ts                     # 21 hard-rule fixtures
+npx tsx scripts/benchmark-real-titles.ts --csv <e>    # paired bare/titled recall
 npx tsx scripts/evaluate-gold-set.ts                  # macro-F1 vs the frozen baseline
 npx tsx scripts/debug-classify.ts --preset cre        # why did THIS lead get THAT label
 ```

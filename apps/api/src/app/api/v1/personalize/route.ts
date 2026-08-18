@@ -1,7 +1,8 @@
 /**
  * POST /api/v1/personalize — the shared decision layer (SPEC-v2).
  *
- * Success body is EXACTLY { icp, icp_use_cases, email_body } (API-003). Version
+ * Success body is EXACTLY { full_name, email, linkedin_url, icp, icp_use_cases,
+ * email_body } (API-003). Version
  * headers carry every operative registry so a bad answer is traceable to the
  * data that produced it. Errors never include partial business output.
  *
@@ -23,6 +24,20 @@ import { MESSAGE_TYPES, REGISTRY_VERSIONS, getTemplate, type MessageType } from 
 export const runtime = "nodejs";
 
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
+/**
+ * Bump when the success body's KEY SET changes.
+ *
+ * The registry fingerprint namespaces the cache against data changes, but the
+ * response shape is a code change and moves independently. When this body went
+ * from three keys to six, replays kept serving three-key bodies out of the old
+ * deploy's cache for a full TTL — a caller reading full_name got null with a
+ * 200 and no warning. Caught live on 2026-08-18; this constant is what stops
+ * the next shape change repeating it.
+ */
+const IDEMPOTENCY_SHAPE = "v2-six-key";
+
+const idemCacheKey = (key: string): string =>
+  `idem:${IDEMPOTENCY_SHAPE}:${registryFingerprint()}:${key}`;
 
 function versionHeaders(servedModel?: string): Record<string, string> {
   return {
@@ -54,10 +69,13 @@ type RequestBody = {
   email_template?: unknown;
   known_fields?: {
     first_name?: unknown;
+    last_name?: unknown;
     title?: unknown;
     company_name?: unknown;
     company_domain?: unknown;
     linkedin_url?: unknown;
+    /** The PERSON's location, distinct from additional_context.territory. */
+    location?: unknown;
   };
   additional_context?: Record<string, unknown>;
 };
@@ -148,7 +166,7 @@ async function record(
 
 export async function POST(req: Request): Promise<Response> {
   const started = Date.now();
-  const trace: Trace = { identity: 0, research: 0, model: 0, bodySource: "none", classification: "none", agreement: "", modelServed: "", useCaseType: "none" };
+  const trace: Trace = { identity: 0, research: 0, model: 0, bodySource: "none", classification: "none", agreement: "", modelServed: "", useCaseType: "none", linkedinSource: "", identityTimedOut: false };
   const res = await handle(req, trace);
   res.headers.set("X-Handler-Ms", String(Date.now() - started));
   res.headers.set(
@@ -163,6 +181,10 @@ export async function POST(req: Request): Promise<Response> {
   if (trace.modelServed) res.headers.set("X-Model-Served", trace.modelServed);
   res.headers.set("X-Use-Case-Type", trace.useCaseType);
   if (trace.agreement) res.headers.set("X-Classifier-Agreement", trace.agreement);
+  if (trace.linkedinSource) res.headers.set("X-Linkedin-Source", trace.linkedinSource);
+  // Says the identity lookup was skipped, not that it found nothing — the
+  // difference matters to anyone reading linkedin_url off the response.
+  if (trace.identityTimedOut) res.headers.set("X-Identity", "timeout");
   return res;
 }
 
@@ -190,6 +212,17 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return err(400, "INVALID_REQUEST", "A valid `email` is required.");
   }
+  // Both names are mandatory (Jacob, 2026-08-16). Checked here rather than in
+  // decide() so a nameless lead costs nothing: no Fundable credit, no Exa
+  // search, no model call. Measured against the real 1601-row export, 81.6% of
+  // rows clear this gate and email — not the names — is the binding constraint.
+  const kfIn = body.known_fields ?? {};
+  const firstName = typeof kfIn.first_name === "string" ? kfIn.first_name.trim() : "";
+  const lastName = typeof kfIn.last_name === "string" ? kfIn.last_name.trim() : "";
+  if (!firstName || !lastName) {
+    return err(400, "INVALID_REQUEST", "`known_fields.first_name` and `known_fields.last_name` are both required.");
+  }
+
   const messageType = body.message_type as MessageType;
   if (!MESSAGE_TYPES.includes(messageType)) {
     return err(400, "INVALID_REQUEST", `\`message_type\` must be one of: ${MESSAGE_TYPES.join(", ")}.`);
@@ -225,9 +258,14 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
   const storage = getStorage();
   const idemKey = req.headers.get("idempotency-key")?.trim();
   if (idemKey) {
-    const cached = (await storage.cacheGet(`idem:${registryFingerprint()}:${idemKey}`, "fundable")) as Record<string, unknown> | null;
+    const cached = (await storage.cacheGet(idemCacheKey(idemKey), "fundable")) as Record<string, unknown> | null;
     if (cached) {
+      // Whitelisted rather than returned as-is: a replay must not be able to
+      // surface a key the live contract does not promise.
       const canonical = {
+        full_name: cached.full_name,
+        email: cached.email,
+        linkedin_url: cached.linkedin_url ?? null,
         icp: cached.icp,
         icp_use_cases: cached.icp_use_cases,
         email_body: cached.email_body,
@@ -256,6 +294,9 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
       template,
       rawTemplate,
       linkedin,
+      firstName,
+      lastName,
+      location: typeof kf.location === "string" ? kf.location.trim() || undefined : undefined,
       knownFields: kf,
       additionalContext: body.additional_context ?? {},
       deadlineAt,
@@ -267,7 +308,7 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
 
     const { success } = decision;
     if (idemKey) {
-      await storage.cacheSet(`idem:${registryFingerprint()}:${idemKey}`, "fundable", success, IDEMPOTENCY_TTL_MS);
+      await storage.cacheSet(idemCacheKey(idemKey), "fundable", success, IDEMPOTENCY_TTL_MS);
     }
 
     await record(storage, auth.keyHash, {

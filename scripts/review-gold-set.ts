@@ -22,12 +22,11 @@
 
 import { execFile } from "node:child_process";
 import { readFileSync, writeFileSync, renameSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { icpEntries, icpByNumber, icpLabel } from "../apps/api/src/lib/v2/registry";
+import { ROOT } from "./lib.js";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const QUEUE = join(ROOT, "config/eval/review_queue.json");
 
 type Row = {
