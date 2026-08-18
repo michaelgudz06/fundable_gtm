@@ -45,7 +45,7 @@ export function registryFingerprint(): string {
   ].join("|");
 }
 
-export function classificationKey(input: {
+function classificationKey(input: {
   email: string;
   title?: string | undefined;
   company?: string | undefined;

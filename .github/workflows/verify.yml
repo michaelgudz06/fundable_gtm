@@ -28,7 +28,7 @@ jobs:
       # a production build before anything noticed.
       - run: npm run typecheck
 
-      # 130 offline tests. Several encode a specific way this pipeline could put
+      # The offline suites. Several encode a specific way this pipeline could put
       # a wrong claim in front of a real person; a failure here is a removed guard.
       - run: npm test
 

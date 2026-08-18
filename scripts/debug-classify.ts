@@ -10,10 +10,9 @@
  *   npx tsx scripts/debug-classify.ts --preset cre
  */
 
-
 import { classifyV2, researchTarget } from "../apps/api/src/lib/v2/classify";
+import { loadRootEnv } from "../packages/fundable-shared/src/env.js";
 import { answer, newExaLedger } from "@fundable/shared";
-import { loadEnv } from "./lib.js";
 
 type Probe = { name: string; email: string; title: string; company?: string };
 
@@ -58,7 +57,8 @@ async function probe(p: Probe) {
 }
 
 async function main() {
-  loadEnv();
+  // Loaded before any client reads process.env, which they do lazily per call.
+  loadRootEnv();
   const presetIdx = process.argv.indexOf("--preset");
   const probes: Probe[] =
     presetIdx >= 0

@@ -1,54 +1,45 @@
 /**
- * Helpers every script in this directory had its own copy of.
+ * Shared plumbing for the operator scripts: argv, env, API config, bounded
+ * concurrency, CSV. Plain functions only — each script keeps its own logic.
  *
- * There were six copies of `loadEnv`, five of `arg`, four of `mapLimit` and two
- * of `parseCsv`. They were not identical, and the differences were not stylistic
- * — each is resolved here in favour of the copy that is correct on edge cases:
- *
- *   arg       four copies refuse to read the NEXT FLAG as this flag's value
- *             (`--csv --n 40` must not set csv="--n"); run-testset's older copy
- *             did. The guard is kept.
- *   mapLimit  three copies stop the worker when `items[i] === undefined`, which
- *             silently truncates the run at the first hole in the array. The
- *             bounds check is kept. The callback takes `(item, index)`; callers
- *             that ignore the index are unaffected.
- *   loadEnv   this now delegates to the shared package's `loadRootEnv`, which
- *             uses Node's own `process.loadEnvFile`. Verified to have the same
- *             precedence the hand-rolled copies had: an already-set process
- *             variable beats the file, so `FOO=x npx tsx …` still wins.
- *   parseCsv  the two copies were genuinely different functions, not duplicates
- *             — one returns raw rows, the other maps them onto header keys. The
- *             parser body is shared; both shapes remain.
+ * Check: npx tsx --test scripts/lib.test.ts
  */
 
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadRootEnv } from "@fundable/shared";
 
-/** Repo root — every script resolved this the same way. */
+import { loadRootEnv, requireEnv } from "../packages/fundable-shared/src/env.js";
+
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** Loads the repo-root `.env` (if present) and returns the merged environment. */
-export function loadEnv(): Record<string, string> {
-  loadRootEnv();
-  return process.env as Record<string, string>;
-}
-
-/** `--name value`. Returns `fallback` when the flag is absent or bare. */
-export const arg = (name: string, fallback?: string): string | undefined => {
+/** `--name value` from argv, or the fallback. */
+export function arg(name: string, fallback?: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
   if (i < 0) return fallback;
   const v = process.argv[i + 1];
-  // A bare switch (`--approve`) has no value after it, and the next token is
-  // the next flag — reading it as this flag's value is how `--csv --n 40`
-  // silently becomes csv="--n".
+  // A flag used as a bare switch (`--approve`) has no value after it, and
+  // returning undefined there is how `--approve` came to crash with an opaque
+  // EISDIR: resolve(undefined ?? "") is the CWD, and readFileSync on a
+  // directory throws. Fall back to the default instead. The `--` guard stops
+  // the next FLAG being eaten as this one's value.
   return v !== undefined && !v.startsWith("--") ? v : fallback;
-};
+}
 
-/** `--name` present, no value. */
+/** Bare `--name` presence. */
 export const flag = (name: string): boolean => process.argv.includes(`--${name}`);
 
-/** Bounded-concurrency map that preserves input order. */
+/** Where the API lives: `--base` overrides prod. */
+export function apiBase(): string {
+  return (arg("base", "https://personalize-api-umber.vercel.app") ?? "").replace(/\/$/, "");
+}
+
+/** The bearer key, from .env or the environment; throws by name if absent. */
+export function apiKey(): string {
+  loadRootEnv();
+  return requireEnv("PERSONALIZE_API_KEY");
+}
+
+/** Runs `fn` over `items` with at most `limit` in flight, preserving order. */
 export async function mapLimit<T, R>(
   items: T[],
   limit: number,
@@ -61,49 +52,48 @@ export async function mapLimit<T, R>(
       for (;;) {
         const i = next++;
         if (i >= items.length) return;
-        out[i] = await fn(items[i]!, i);
+        out[i] = await fn(items[i] as T, i);
       }
     })
   );
   return out;
 }
 
-/** RFC4180-ish CSV → raw rows. Handles quoted cells, `""` escapes and CRLF. */
-export function parseCsvRows(text: string): string[][] {
+/**
+ * Minimal RFC4180 reader: quoted fields, escaped quotes, embedded newlines.
+ * Strips a leading BOM and drops all-blank rows.
+ */
+export function parseCsv(text: string): string[][] {
+  const src = text.replace(/^﻿/, "");
   const rows: string[][] = [];
   let row: string[] = [];
-  let cell = "";
+  let field = "";
   let quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i]!;
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
     if (quoted) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') {
-          cell += '"';
+      if (c === '"') {
+        if (src[i + 1] === '"') {
+          field += '"';
           i++;
         } else quoted = false;
-      } else cell += ch;
-    } else if (ch === '"') quoted = true;
-    else if (ch === ",") {
-      row.push(cell);
-      cell = "";
-    } else if (ch === "\n") {
-      row.push(cell);
+      } else field += c;
+      continue;
+    }
+    if (c === '"') quoted = true;
+    else if (c === ",") {
+      row.push(field);
+      field = "";
+    } else if (c === "\n") {
+      row.push(field);
       rows.push(row);
       row = [];
-      cell = "";
-    } else if (ch !== "\r") cell += ch;
+      field = "";
+    } else if (c !== "\r") field += c;
   }
-  if (cell || row.length) {
-    row.push(cell);
+  if (field || row.length) {
+    row.push(field);
     rows.push(row);
   }
   return rows.filter((r) => r.some((c) => c.trim() !== ""));
-}
-
-/** Same parse, keyed by the header row. Strips the UTF-8 BOM Excel prepends. */
-export function parseCsv(text: string): Record<string, string>[] {
-  const rows = parseCsvRows(text);
-  const hdr = (rows.shift() ?? []).map((h) => h.replace(/^﻿/, "").trim());
-  return rows.map((r) => Object.fromEntries(hdr.map((h, i) => [h, (r[i] ?? "").trim()])));
 }

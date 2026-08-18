@@ -21,7 +21,8 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { ROOT, arg, parseCsvRows } from "./lib.js";
+
+import { ROOT, arg, flag, parseCsv } from "./lib.js";
 
 type Candidate = {
   id: string;
@@ -175,7 +176,7 @@ const AUTHORED: Omit<Candidate, "decision" | "note">[] = [
 // ---------------------------------------------------------------------------
 
 function mineFromExport(csvPath: string): Candidate[] {
-  const grid = parseCsvRows(readFileSync(csvPath, "utf8").replace(/^﻿/, ""));
+  const grid = parseCsv(readFileSync(csvPath, "utf8"));
   const header = (grid[0] ?? []).map((h) => h.trim().toLowerCase());
   const col = (n: string) => header.indexOf(n);
   const iLi = col("linkedin url");
@@ -243,7 +244,7 @@ function mineFromExport(csvPath: string): Candidate[] {
  *   npx tsx scripts/build-gold-set.ts --enrich <export.csv>
  */
 function enrichQueue(csvPath: string, queuePath: string): void {
-  const grid = parseCsvRows(readFileSync(csvPath, "utf8").replace(/^\ufeff/, ""));
+  const grid = parseCsv(readFileSync(csvPath, "utf8").replace(/^\ufeff/, ""));
   const header = (grid[0] ?? []).map((h) => h.trim().toLowerCase());
   const col = (n: string) => header.indexOf(n);
   const iLi = col("linkedin url");
@@ -329,15 +330,15 @@ function main() {
   const outDir = join(ROOT, "config/eval");
   mkdirSync(outDir, { recursive: true });
 
-  if (process.argv.includes("--enrich")) {
+  if (flag("enrich")) {
     const csv = arg("enrich");
     if (!csv) throw new Error("--enrich <export.csv> is required");
     enrichQueue(resolve(csv), join(outDir, "review_queue.json"));
     return;
   }
 
-  if (process.argv.includes("--approve")) {
-    const queuePath = resolve(arg("approve", join(outDir, "review_queue.json")) ?? "");
+  if (flag("approve")) {
+    const queuePath = resolve(arg("approve") ?? join(outDir, "review_queue.json"));
     const queue = JSON.parse(readFileSync(queuePath, "utf8")) as { rows: Candidate[] };
     const approved = queue.rows.filter((r) => r.decision.startsWith("approve") || r.decision.startsWith("relabel:"));
     const rows = approved.map((r) => ({

@@ -1,4 +1,12 @@
-# Fundable Personalization API
+# Build log — v1 personalizer (historical)
+
+> **Historical record, July 2026.** Chronological build log of the v1
+> personalizer (`POST /api/personalize`, built to [PRD.md](PRD.md)). Status,
+> setup, and milestone lines below describe that point in time — the current
+> product is the v2 decision layer, documented in [README.md](README.md) and
+> [docs/SPEC-v2.md](docs/SPEC-v2.md). Kept because the defects recorded here
+> (conflation, pronoun scope, the blank-identifier probe) still explain the
+> checks in `packages/fundable-shared/src/verify.ts` and `fundable.ts`.
 
 An endpoint you hit before sending any automated email or LinkedIn message. It
 takes a person and a trigger, and returns copy personalized in Jacob's voice

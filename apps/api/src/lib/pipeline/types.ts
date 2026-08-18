@@ -1,5 +1,5 @@
 /**
- * Request/response contract for POST /api/personalize — PRD §4, verbatim.
+ * Request/response contract for POST /api/personalize/stream — PRD §4, verbatim.
  */
 
 import type { Evidence } from "@fundable/shared";

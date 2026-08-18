@@ -21,11 +21,11 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { ROOT, loadEnv, arg, mapLimit } from "./lib.js";
 
-const env = loadEnv();
-const BASE = (arg("base", "https://personalize-api-umber.vercel.app") ?? "").replace(/\/$/, "");
-const KEY = env.PERSONALIZE_API_KEY ?? "";
+import { ROOT, apiBase, apiKey, arg, flag, mapLimit } from "./lib.js";
+
+const BASE = apiBase();
+const KEY = apiKey();
 
 /** One human-approved example. `label` is truth, not a prediction. */
 type GoldRow = {
@@ -126,11 +126,10 @@ function score(rows: { truth: string; predicted: string | null }[]) {
 }
 
 async function main() {
-  if (!KEY) throw new Error("PERSONALIZE_API_KEY missing.");
   const setPath = resolve(arg("set", join(ROOT, "config/eval/gold_set.json")) ?? "");
   if (!existsSync(setPath)) {
     throw new Error(
-      `No gold set at ${setPath}. Build one with:\n  npx tsx scripts/build-gold-set.ts --review`
+      `No gold set at ${setPath}. Build one with:\n  npx tsx scripts/build-gold-set.ts --csv <export.csv>, review the queue, then --approve`
     );
   }
   const gold = JSON.parse(readFileSync(setPath, "utf8")) as GoldSet;
@@ -272,7 +271,7 @@ async function main() {
 
   if (short) {
     process.exitCode = 1;
-    if (process.argv.includes("--freeze")) {
+    if (flag("freeze")) {
       process.stderr.write(
         "\nRefusing to freeze a baseline from an incomplete run: a baseline is the thing\n" +
           "every later run is compared against, and one built from a biased subset makes\n" +
@@ -281,7 +280,7 @@ async function main() {
       return;
     }
   }
-  if (process.argv.includes("--freeze")) {
+  if (flag("freeze")) {
     mkdirSync(dirname(baselinePath), { recursive: true });
     writeFileSync(
       baselinePath,

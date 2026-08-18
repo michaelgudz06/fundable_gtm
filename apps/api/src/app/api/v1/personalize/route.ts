@@ -1,58 +1,24 @@
 /**
  * POST /api/v1/personalize — the shared decision layer (SPEC-v2).
  *
- * Success body is { full_name, email, linkedin_url, icp, icp_use_cases,
- * email_body }. API-003 pinned this to exactly the last three; the identity
- * echo was added 2026-08-16 for Jacob's v2 shape. Deliberately ADDITIVE — a
- * caller reading `icp_use_cases` today keeps working, which a replacement
- * object would have broken. The echo is what the request resolved to, so a row
- * in a spreadsheet can be matched back to its answer without re-deriving it.
+ * Success body is EXACTLY { icp, icp_use_cases, email_body } (API-003). Version
+ * headers carry every operative registry so a bad answer is traceable to the
+ * data that produced it. Errors never include partial business output.
  *
- * Version headers carry every operative registry so a bad answer is traceable
- * to the data that produced it. Errors never include partial business output.
- *
- * Pipeline: validate → template resolution → identity → research+classify →
- * use-case selection → compose → validate output. Fail closed at every gate.
+ * This file wires HTTP: auth, request validation (API-002), idempotency
+ * (API-005), headers, telemetry. The decision pipeline itself lives in
+ * lib/v2/personalize.ts.
  */
 
-import {
-  FundableError,
-  newExaLedger,
-  isFreemail,
-  MODEL_PLAN,
-  newLedger,
-  normalizeDomain,
-  startBudget,
-  verifyCopy,
-  blockingIssues,
-} from "@fundable/shared";
-
-import { createHash } from "node:crypto";
+import { FundableError, newExaLedger, MODEL_PLAN, newLedger, startBudget } from "@fundable/shared";
 
 import { checkAuth, checkRateLimit } from "../../../../lib/auth";
 import { getStorage } from "../../../../lib/storage";
-import { researchTarget, startResearch, CLASSIFIER_PROMPT_VERSION } from "../../../../lib/v2/classify";
-import { classifyCached, registryFingerprint } from "../../../../lib/v2/classify-cached";
-import { personCached } from "../../../../lib/v2/person-cache";
-import { resolveLinkedIn } from "../../../../lib/v2/resolve-linkedin";
-import { newTrace, record, type Trace } from "../../../../lib/v2/request-log";
-import {
-  composeFromTemplate,
-  composeNotCore,
-  validateEmailBody,
-  validateTemplateSource,
-  type ComposeContext,
-} from "../../../../lib/v2/compose";
-import {
-  MESSAGE_TYPES,
-  REGISTRY_VERSIONS,
-  getTemplate,
-  icpByNumber,
-  useCasesFor,
-  isDeferred,
-  approvedClaimTexts,
-  type MessageType,
-} from "../../../../lib/v2/registry";
+import { CLASSIFIER_PROMPT_VERSION } from "../../../../lib/v2/classify";
+import { registryFingerprint } from "../../../../lib/v2/classify-cached";
+import { validateTemplateSource } from "../../../../lib/v2/compose";
+import { decide, type Trace } from "../../../../lib/v2/personalize";
+import { MESSAGE_TYPES, REGISTRY_VERSIONS, getTemplate, type MessageType } from "../../../../lib/v2/registry";
 
 export const runtime = "nodejs";
 
@@ -93,14 +59,99 @@ type RequestBody = {
     company_name?: unknown;
     company_domain?: unknown;
     linkedin_url?: unknown;
+    /** The PERSON's location, distinct from additional_context.territory. */
     location?: unknown;
   };
   additional_context?: Record<string, unknown>;
 };
 
+/**
+ * One row per request, for the metrics the spec asks for and nothing emitted:
+ * label distribution, Not Core rate, cache hit rate, output-validation failures,
+ * latency, cost, and which registry versions produced the answer.
+ *
+ * Deliberately PII-minimised. The legacy pipeline writes person_email and the
+ * full body into this same table; this route writes NEITHER. What a metric needs
+ * is the shape of the decision, not who it was about — and a log that answers
+ * "what is our Not Core rate this week" without storing a single address is
+ * strictly better than one that cannot be shared.
+ */
+async function record(
+  storage: ReturnType<typeof getStorage>,
+  keyHash: string,
+  fields: {
+    messageType: string;
+    status: string;
+    icp: string | null;
+    trace: Trace;
+    handlerMs: number;
+    fundableCredits: number;
+    exaUsd: number;
+    llmTokens: number;
+    warnings: string[];
+    validationIssues: unknown[];
+  }
+): Promise<void> {
+  try {
+    await storage.log({
+      api_key_hash: keyHash,
+      trigger: fields.messageType,
+      channel: "v1/personalize",
+      // PII columns stay null on this route. See the note above.
+      person_email: null,
+      person_linkedin: null,
+      person_name: null,
+      sender_context: null,
+      max_facts: 0,
+      template_provided: fields.trace.bodySource === "caller_template",
+      company_id: null,
+      company_name: null,
+      company_domain: null,
+      person_id: null,
+      status: fields.status,
+      confidence: null,
+      angle: fields.icp,
+      subject: null,
+      body: null,
+      evidence: [
+        {
+          registry: REGISTRY_VERSIONS.icp_registry,
+          use_cases: REGISTRY_VERSIONS.use_case_catalog,
+          templates: REGISTRY_VERSIONS.template_catalog,
+          claims: REGISTRY_VERSIONS.approved_claims,
+          prompt: CLASSIFIER_PROMPT_VERSION,
+          model_requested: MODEL_PLAN,
+          model_served: fields.trace.modelServed || null,
+          classification: fields.trace.classification,
+          agreement: fields.trace.agreement || null,
+          body_source: fields.trace.bodySource,
+          use_case_type: fields.trace.useCaseType,
+          stage_ms: {
+            identity: fields.trace.identity,
+            research: fields.trace.research,
+            model: fields.trace.model,
+          },
+        },
+      ],
+      warnings: fields.warnings,
+      verify_issues: fields.validationIssues.length ? fields.validationIssues : null,
+      verify_retried: false,
+      fundable_credits: fields.fundableCredits,
+      exa_cost_usd: Number(fields.exaUsd.toFixed(6)),
+      llm_tokens: fields.llmTokens,
+      latency_ms: fields.handlerMs,
+      voice_id: null,
+      voice_provenance: null,
+    });
+  } catch {
+    // Telemetry must never fail a send. A dropped metric is a worse day than a
+    // dropped email only for us.
+  }
+}
+
 export async function POST(req: Request): Promise<Response> {
   const started = Date.now();
-  const trace = newTrace();
+  const trace: Trace = { identity: 0, research: 0, model: 0, bodySource: "none", classification: "none", agreement: "", modelServed: "", useCaseType: "none", linkedinSource: "", identityTimedOut: false };
   const res = await handle(req, trace);
   res.headers.set("X-Handler-Ms", String(Date.now() - started));
   res.headers.set(
@@ -114,9 +165,11 @@ export async function POST(req: Request): Promise<Response> {
   res.headers.set("X-Classification", trace.classification);
   if (trace.modelServed) res.headers.set("X-Model-Served", trace.modelServed);
   res.headers.set("X-Use-Case-Type", trace.useCaseType);
-  if (trace.linkedinSource) res.headers.set("X-Linkedin-Source", trace.linkedinSource);
-  if (trace.identityTimedOut) res.headers.set("X-Identity", "timeout");
   if (trace.agreement) res.headers.set("X-Classifier-Agreement", trace.agreement);
+  if (trace.linkedinSource) res.headers.set("X-Linkedin-Source", trace.linkedinSource);
+  // Says the identity lookup was skipped, not that it found nothing — the
+  // difference matters to anyone reading linkedin_url off the response.
+  if (trace.identityTimedOut) res.headers.set("X-Identity", "timeout");
   return res;
 }
 
@@ -144,20 +197,15 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return err(400, "INVALID_REQUEST", "A valid `email` is required.");
   }
-  // Names are mandatory as of 2026-08-16 (Jacob). Two reasons they are worth a
-  // 400 rather than a soft fallback: the find-LinkedIn cascade matches on name,
-  // so a nameless lead cannot be resolved at all; and "Hi there," is the classic
-  // tell that a machine sent it. `composeFromTemplate` still carries the
-  // no-name fallback as defence in depth — this gate is what makes it unreachable.
+  // Both names are mandatory (Jacob, 2026-08-16). Checked here rather than in
+  // decide() so a nameless lead costs nothing: no Fundable credit, no Exa
+  // search, no model call. Measured against the real 1601-row export, 81.6% of
+  // rows clear this gate and email — not the names — is the binding constraint.
   const kfIn = body.known_fields ?? {};
   const firstName = typeof kfIn.first_name === "string" ? kfIn.first_name.trim() : "";
   const lastName = typeof kfIn.last_name === "string" ? kfIn.last_name.trim() : "";
   if (!firstName || !lastName) {
-    return err(
-      400,
-      "INVALID_REQUEST",
-      "`known_fields.first_name` and `known_fields.last_name` are both required."
-    );
+    return err(400, "INVALID_REQUEST", "`known_fields.first_name` and `known_fields.last_name` are both required.");
   }
 
   const messageType = body.message_type as MessageType;
@@ -183,8 +231,9 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
     );
   }
 
-  if (hasRawTemplate) {
-    const structural = validateTemplateSource((body.email_template as string).trim());
+  const rawTemplate = hasRawTemplate ? (body.email_template as string).trim() : null;
+  if (rawTemplate !== null) {
+    const structural = validateTemplateSource(rawTemplate);
     if (structural.length) {
       return err(422, "TEMPLATE_VALIDATION_FAILED", "email_template failed validation.", structural);
     }
@@ -193,28 +242,10 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
   // ---- idempotency (API-005) ------------------------------------------------
   const storage = getStorage();
   const idemKey = req.headers.get("idempotency-key")?.trim();
-  // Namespaced by the request body as well as the registries. An idempotency
-  // key is a retry token; a caller that reuses one for a DIFFERENT body was
-  // being handed the first lead's body back as if it were the second lead's —
-  // silently, with a 200. Different body now means a different key, so it
-  // recomputes instead. A genuine retry re-sends identical bytes and still
-  // replays. (Stripe answers this with a 409 on reuse; that needs an error
-  // path and a stored request hash, and recomputing is the safe direction.)
-  const idemCacheKey = idemKey
-    ? `idem:${registryFingerprint()}:${createHash("sha256")
-        .update(JSON.stringify(body))
-        .digest("hex")
-        .slice(0, 32)}:${idemKey}`
-    : "";
-  if (idemCacheKey) {
-    const cached = (await storage.cacheGet(idemCacheKey, "fundable")) as Record<string, unknown> | null;
+  if (idemKey) {
+    const cached = (await storage.cacheGet(`idem:${registryFingerprint()}:${idemKey}`, "fundable")) as Record<string, unknown> | null;
     if (cached) {
-      // Rebuilt key-by-key rather than echoed: a stored object from an older
-      // response shape must not leak fields this version no longer promises.
       const canonical = {
-        full_name: cached.full_name ?? null,
-        email: cached.email,
-        linkedin_url: cached.linkedin_url ?? null,
         icp: cached.icp,
         icp_use_cases: cached.icp_use_cases,
         email_body: cached.email_body,
@@ -229,233 +260,47 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
   const fundable = newLedger(deadlineAt);
   const exa = newExaLedger(deadlineAt);
   const kf = body.known_fields ?? {};
-  const ctxIn = body.additional_context ?? {};
-  let linkedin =
+  const linkedin =
     typeof body.linkedin_url === "string"
       ? body.linkedin_url
       : typeof kf.linkedin_url === "string"
         ? kf.linkedin_url
         : undefined;
-  // The PERSON's location, not a sales territory (that is `additional_context.
-  // territory`, and it selects use cases). Used only to disambiguate two people
-  // with the same name during LinkedIn resolution — deliberately NOT added to
-  // ComposeContext, because naming where someone is sitting is the same
-  // we-can-see-you creepiness the privacy rule blocks for visitor city.
-  const location = typeof kf.location === "string" ? kf.location.trim() || undefined : undefined;
 
   try {
-    // ---- identity (ID-001..004) --------------------------------------------
-    let title = typeof kf.title === "string" ? kf.title.trim() : undefined;
-    let company = typeof kf.company_name === "string" ? kf.company_name.trim() : undefined;
-    const emailDomain = normalizeDomain(email).domain;
-    const companyDomain =
-      typeof kf.company_domain === "string" && kf.company_domain.trim()
-        ? normalizeDomain(kf.company_domain).domain
-        : undefined;
-
-    // Research asks about the company; the identity lookup asks about the
-    // person. Neither needs the other's answer when the caller already told us
-    // the title — and the identity leg is the slow one (measured at 19s cold,
-    // 2.6s warm against Fundable /people), so the two are started together.
-    let researchDomain = companyDomain;
-    const preTarget = title
-      ? researchTarget({ emailDomain, companyDomain: researchDomain, company })
-      : null; // no title yet: the freemail gate may make research unnecessary
-    const researchTask = preTarget ? startResearch(preTarget, exa) : undefined;
-
-    if (linkedin) {
-      const tIdentity = Date.now();
-      const { person, timedOut } = await personCached(linkedin, fundable);
-      trace.identity = Date.now() - tIdentity;
-      trace.identityTimedOut = timedOut;
-      if (person) {
-        title = title ?? person.title ?? undefined;
-        company = company ?? person.current_company?.name ?? undefined;
-        // ID-004: fail closed on a material email-domain vs employer conflict.
-        //
-        // "Material" excludes a personal address. gmail.com is not a competing
-        // employer claim — it is the absence of one — so treating the mismatch
-        // as a conflict would 409 every consumer-mailbox lead whose profile
-        // resolves, which is precisely the population the research fallback
-        // exists to serve. Their employer is taken from the profile instead.
-        const employerDomain = person.current_company?.domain
-          ? normalizeDomain(person.current_company.domain).domain
-          : null;
-        if (employerDomain && !isFreemail(emailDomain) && employerDomain !== emailDomain) {
-          return err(
-            409,
-            "IDENTITY_CONFLICT",
-            `Email domain "${emailDomain}" conflicts with the LinkedIn profile's current employer "${employerDomain}". Failing closed rather than personalizing for the wrong identity.`
-          );
-        }
-        // For a personal address the profile's employer is the best evidence we
-        // have — better than the caller's assertion, and far better than a name.
-        if (employerDomain && isFreemail(emailDomain)) researchDomain = employerDomain;
-      }
-    } else {
-      // Step 1 of Jacob's flow: no LinkedIn, so go find one. Skipped entirely
-      // when the caller supplied a URL, which both live surfaces do.
-      //
-      // No `personCached` follow-up on the resolved URL. The cascade already
-      // returns the title and company that lookup would have supplied, and
-      // spending another 8s leg plus a Fundable credit to re-learn a fact we
-      // are holding would be the whole latency budget for nothing.
-      const tResolve = Date.now();
-      const found = await resolveLinkedIn({ email, firstName, lastName, location, deadlineAt });
-      trace.identity = Date.now() - tResolve;
-      if (found) {
-        linkedin = found.linkedin_url;
-        trace.linkedinSource = found.source;
-        // Gap-filling only: the caller's own assertion outranks a vendor's guess.
-        title = title ?? found.title;
-        company = company ?? found.company;
-      }
-    }
-
-    // ---- classification -----------------------------------------------------
-    // company_domain (read above) is the caller's assertion about the employer.
-    // It never overrides a corporate email domain and never participates in the
-    // identity check; it exists so a lead with a personal address is still
-    // researchable instead of failing closed for want of a lookup.
-    const cls = await classifyCached(
-      { email, title, company, companyDomain: researchDomain, researchTask, deadlineAt },
-      exa
-    );
-    trace.classification = cls.cacheState;
-    trace.research = cls.timings.research;
-    trace.model = cls.timings.model;
-    if (cls.agreement.total) trace.agreement = `${cls.agreement.top}/${cls.agreement.total}`;
-    if (cls.model) trace.modelServed = cls.model;
-    const entry = cls.icpNumber !== null ? icpByNumber(cls.icpNumber) : null;
-    // CTX-001: typed context only. These three are the conditions the catalog's
-    // requires_context refers to; anything else in additional_context is ignored.
-    const useCases = useCasesFor(cls.icpNumber, {
-      investor_connection: ctxIn.investor_connection === true,
-      product_context: typeof ctxIn.product_context === "string" ? ctxIn.product_context.trim() : undefined,
-      target_buyer_role: typeof ctxIn.target_buyer_role === "string" ? ctxIn.target_buyer_role.trim() : undefined,
-      territory: typeof ctxIn.territory === "string" ? ctxIn.territory.trim() : undefined,
-    });
-
-    trace.useCaseType = useCases[0]?.workflow_type ?? "none";
-    if (isDeferred(cls.icpNumber)) {
-      // USE-006: classified, but the spec defers use-case selection for this ICP
-      // until product and delivery context are known. The lead still gets copy —
-      // it just makes no use-case claim.
-      trace.useCaseType = "deferred";
-    }
-
-    // ---- compose (GEN-001..009, CTX-001..004) -------------------------------
-    // Context is typed and allowlisted (CTX-001): unknown keys are ignored, and
-    // nothing here can override policy because policy never reads it.
-    const ctx: ComposeContext = {
-      first_name: firstName,
-      company_name: company,
-      territory: typeof ctxIn.territory === "string" ? ctxIn.territory.trim() || undefined : undefined,
-      target_buyer_role:
-        typeof ctxIn.target_buyer_role === "string" ? ctxIn.target_buyer_role.trim() || undefined : undefined,
-      sender_name: typeof ctxIn.sender_name === "string" ? ctxIn.sender_name.trim() || undefined : undefined,
-      icp_descriptor: entry?.email_descriptor,
-    };
-
-    let emailBody: string;
-    if (cls.icpNumber === null) {
-      const { body: b, issues } = composeNotCore({ messageType, ctx });
-      if (issues.length) return err(502, "OUTPUT_VALIDATION_FAILED", "Generic fallback failed validation.", issues);
-      emailBody = b;
-      trace.bodySource = "generic_fallback";
-    } else if (template) {
-      const { body: b, issues } = composeFromTemplate({ template, useCases, ctx });
-      if (issues.length) return err(502, "OUTPUT_VALIDATION_FAILED", "Composed body failed validation.", issues);
-      emailBody = b;
-      trace.bodySource = "catalog_template";
-    } else {
-      // Raw email_template: same variable/claim/privacy policies as catalog copy.
-      const raw = (body.email_template as string).trim();
-      const { body: b, issues } = composeFromTemplate({
-        template: {
-          id: "caller_raw_template",
-          version: "caller",
-          source: "caller",
-          allowed_message_types: [messageType],
-          audience: "caller-defined",
-          required_context: [],
-          optional_context: [],
-          cta_policy: "caller-defined",
-          claim_refs: [],
-          body: raw,
-        },
-        useCases,
-        ctx,
-      });
-      if (issues.length) return err(422, "TEMPLATE_VALIDATION_FAILED", "email_template failed validation.", issues);
-
-      // Claim policy: everything factual must trace to the use case, approved
-      // claims, or the caller's own template text (their claims are theirs).
-      const evidence = [
-        ...useCases.map((u) => ({
-          fact: `${u.name}. ${u.why_relevant} Example: ${
-            u.workflow_type === "mcp" ? u.example_prompt : u.example_alert
-          }`,
-          source: "sender_context" as const,
-          confidence: 1,
-        })),
-        ...approvedClaimTexts(["capability-deal-alerts", "capability-realtime-tracking", "capability-buyer-contacts", "capability-mcp", "capability-api"]).map(
-          (t) => ({ fact: t, source: "sender_context" as const, confidence: 1 })
-        ),
-      ];
-      const verdicts = blockingIssues(
-        verifyCopy({
-          copy: b,
-          evidence,
-          template: raw,
-          allowedNames: [ctx.first_name, ctx.company_name, ctx.sender_name, "Fundable"].filter(
-            (x): x is string => !!x
-          ),
-          senderCompany: "Fundable",
-        })
-      );
-      if (verdicts.length) {
-        return err(422, "UNSUPPORTED_CLAIM", "email_template produced claims outside the approved set.", verdicts);
-      }
-      emailBody = b;
-      trace.bodySource = "caller_template";
-    }
-
-    const finalIssues = validateEmailBody(emailBody);
-    if (finalIssues.length) {
-      return err(502, "OUTPUT_VALIDATION_FAILED", "Final body failed validation.", finalIssues);
-    }
-
-    // ---- success (API-003, extended 2026-08-16) -----------------------------
-    // `last_name` is echoed but never composed with: GEN policy allows a first
-    // name in copy and nothing else, so it exists only to build `full_name`.
-    const success = {
-      full_name: `${firstName} ${lastName}`,
+    const decision = await decide({
       email,
-      // What the request actually resolved to, not what was asked for.
-      linkedin_url: linkedin ?? null,
-      icp: cls.label,
-      icp_use_cases: useCases,
-      email_body: emailBody,
-    };
+      messageType,
+      template,
+      rawTemplate,
+      linkedin,
+      firstName,
+      lastName,
+      location: typeof kf.location === "string" ? kf.location.trim() || undefined : undefined,
+      knownFields: kf,
+      additionalContext: body.additional_context ?? {},
+      deadlineAt,
+      fundable,
+      exa,
+      trace,
+    });
+    if (!decision.ok) return err(decision.status, decision.code, decision.message, decision.details);
 
-    if (idemCacheKey) {
-      await storage.cacheSet(idemCacheKey, "fundable", success, IDEMPOTENCY_TTL_MS);
+    const { success } = decision;
+    if (idemKey) {
+      await storage.cacheSet(`idem:${registryFingerprint()}:${idemKey}`, "fundable", success, IDEMPOTENCY_TTL_MS);
     }
 
     await record(storage, auth.keyHash, {
       messageType,
-      // pz_log's vocabulary, shared with the legacy pipeline, so "what is our
-      // Not Core rate this week" is one query over both routes. This was "ok",
-      // which is not a member of that vocabulary and failed the CHECK.
-      status: trace.bodySource === "generic_fallback" ? "template_only" : "personalized",
-      icp: cls.label,
+      status: "ok",
+      icp: success.icp,
       trace,
       handlerMs: Date.now() - handlerStarted,
       fundableCredits: fundable.credits,
       exaUsd: exa.usd,
-      llmTokens: cls.usage.reduce((n, u) => n + (u.totalTokens ?? 0), 0),
-      warnings: cls.warnings,
+      llmTokens: decision.usage.reduce((n, u) => n + (u.totalTokens ?? 0), 0),
+      warnings: decision.warnings,
       validationIssues: [],
     });
 

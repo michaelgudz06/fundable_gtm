@@ -17,11 +17,11 @@
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { ROOT, loadEnv, arg, mapLimit } from "./lib.js";
 
-const env = loadEnv();
-const BASE = (arg("base", "https://personalize-api-umber.vercel.app") ?? "").replace(/\/$/, "");
-const KEY = env.PERSONALIZE_API_KEY ?? "";
+import { ROOT, apiBase, apiKey, mapLimit } from "./lib.js";
+
+const BASE = apiBase();
+const KEY = apiKey();
 
 type Row = {
   id: string;
@@ -63,7 +63,6 @@ async function run(row: Row): Promise<Outcome> {
 }
 
 async function main() {
-  if (!KEY) throw new Error("PERSONALIZE_API_KEY missing.");
   const set = JSON.parse(readFileSync(join(ROOT, "config/eval/hard_rules.json"), "utf8")) as {
     version: string;
     rows: Row[];

@@ -10,7 +10,7 @@
 import { provenanceWarning } from "@fundable/shared";
 
 import { checkAuth } from "../../../lib/auth";
-import { getVoice, senderContextIds } from "../../../lib/config-registry";
+import { VOICE, senderContextIds } from "../../../lib/config-registry";
 
 export const runtime = "nodejs";
 
@@ -23,7 +23,7 @@ export async function GET(req: Request): Promise<Response> {
     );
   }
 
-  const voice = getVoice("jacob");
+  const voice = VOICE;
   return Response.json({
     sender_contexts: senderContextIds(),
     voice: {

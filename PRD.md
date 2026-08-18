@@ -1,3 +1,10 @@
+> **Historical record.** These are the original 2026-07-27 requirements for the
+> v1 personalizer (`POST /api/personalize` — person + trigger in, voice-matched
+> copy + evidence out). The product was re-specified on 2026-07-30 as the v2 ICP
+> decision layer: [docs/SPEC-v2.md](docs/SPEC-v2.md) is the current spec and
+> [README.md](README.md) documents what shipped. Kept as the record of why this
+> exists; nothing below is maintained.
+
 # Fundable Personalization API — PRD
 
 **Owner:** Michael Gudz · **Requested by:** Jacob Klionsky · **Date:** 2026-07-27

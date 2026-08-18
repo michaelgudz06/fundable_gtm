@@ -15,12 +15,9 @@
  */
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { ROOT, loadEnv, arg, flag, mapLimit } from "./lib.js";
+import { join } from "node:path";
 
-// ---------------------------------------------------------------------------
-// config
-// ---------------------------------------------------------------------------
+import { ROOT, apiBase, apiKey, arg, flag, mapLimit } from "./lib.js";
 
 type Row = {
   id: string;
@@ -250,14 +247,12 @@ function report(results: Outcome[], meta: { base: string; variant: string; start
 // ---------------------------------------------------------------------------
 
 async function main() {
-  const env = loadEnv();
-  const base = (arg("base", "https://personalize-api-umber.vercel.app") ?? "").replace(/\/$/, "");
-  const key = env.PERSONALIZE_API_KEY;
-  if (!key) throw new Error("PERSONALIZE_API_KEY missing (.env or environment).");
+  const base = apiBase();
+  const key = apiKey();
   const withDomain = flag("domain");
   const variant = withDomain ? "with-domain" : "baseline";
   const concurrency = Number(arg("concurrency", "4"));
-  const outDir = resolve(arg("out", join(ROOT, "test-runs")) ?? "");
+  const outDir = join(ROOT, "test-runs");
   mkdirSync(outDir, { recursive: true });
 
   const fixture = JSON.parse(
