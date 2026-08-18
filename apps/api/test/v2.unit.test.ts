@@ -10,7 +10,6 @@ import {
   MESSAGE_TYPES,
   REGISTRY_VERSIONS,
   getTemplate,
-  genericFallback,
   icpByNumber,
   icpDescriptor,
   icpEntries,
@@ -22,6 +21,7 @@ import {
 } from "../src/lib/v2/registry";
 import { asCompanyName, asFactValue, buildClassifierPrompt, researchTarget } from "../src/lib/v2/classify";
 import { NOT_CORE_OPTION, PENDING_HUBSPOT_OPTIONS, hubspotLabelFor } from "../src/lib/v2/hubspot";
+import { resolveLinkedIn } from "../src/lib/v2/resolve-linkedin";
 import {
   articleFor,
   composeFromTemplate,
@@ -589,5 +589,178 @@ describe("registry gates that must hold at build time", () => {
     // would have thrown on import and every test above would have failed.
     // This test exists to document the mechanism.
     assert.ok(icpByNumber(2));
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * Find-LinkedIn (step 1 of Jacob's flow).
+ *
+ * Exercised against a stub speaking the n8n workflow's own output shape rather
+ * than against n8n itself: the value here is proving what this repo does with
+ * each verdict, and the branch that matters most — an unapproved candidate —
+ * is the one a live call is least likely to hand us on demand.
+ */
+describe("resolveLinkedIn", () => {
+  const OUT = {
+    linkedinUrl: "https://www.linkedin.com/in/sam-rivera",
+    linkedinApproved: true,
+    linkedinConfidence: "high",
+    linkedinSource: "quick_enrich",
+    quickEnrichTitle: "VP, Investment Sales",
+    quickEnrichCompany: "Example CRE",
+    aiArkTitle: "",
+    apolloTitle: "",
+  };
+
+  async function withStub(
+    respond: (req: import("node:http").IncomingMessage) => { status?: number; body: unknown },
+    run: () => Promise<void>
+  ) {
+    const { createServer } = await import("node:http");
+    const seen: Array<Record<string, unknown>> = [];
+    const server = createServer((req, res) => {
+      let raw = "";
+      req.on("data", (c) => (raw += c));
+      req.on("end", () => {
+        seen.push(JSON.parse(raw || "{}"));
+        const { status = 200, body } = respond(req);
+        res.writeHead(status, { "content-type": "application/json" });
+        res.end(JSON.stringify(body));
+      });
+    });
+    await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
+    const port = (server.address() as { port: number }).port;
+    const prev = process.env.N8N_LINKEDIN_WEBHOOK_URL;
+    process.env.N8N_LINKEDIN_WEBHOOK_URL = `http://127.0.0.1:${port}/webhook/resolve-linkedin`;
+    try {
+      await run();
+    } finally {
+      if (prev === undefined) delete process.env.N8N_LINKEDIN_WEBHOOK_URL;
+      else process.env.N8N_LINKEDIN_WEBHOOK_URL = prev;
+      await new Promise<void>((ok) => server.close(() => ok()));
+    }
+    return seen;
+  }
+
+  // A distinct address per test: results are cached for 30 days keyed on email
+  // plus name, and .env carries a real DATABASE_URL, so a shared address would
+  // have every case after the first read the first one's answer instead of the
+  // stub's. (That the sharing happened at all is the cache proving it works.)
+  // Unique per RUN, not just per test. Results are cached for 30 days keyed on
+  // email + name and .env carries a real DATABASE_URL, so a fixed address makes
+  // these pass once and then quietly assert against the first run's answer
+  // forever after — worst of all for the case below, which checks the request
+  // body and sees no request at all on a cache hit.
+  const run = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  const lead = (who: string) => ({
+    email: `${who}-${run}@example-cre.com`,
+    firstName: "Sam",
+    lastName: "Rivera",
+  });
+
+  test("an unconfigured webhook is a no-op, not a failure", async () => {
+    const prev = process.env.N8N_LINKEDIN_WEBHOOK_URL;
+    delete process.env.N8N_LINKEDIN_WEBHOOK_URL;
+    try {
+      assert.equal(await resolveLinkedIn(lead("unconfigured")), null);
+    } finally {
+      if (prev !== undefined) process.env.N8N_LINKEDIN_WEBHOOK_URL = prev;
+    }
+  });
+
+  test("an approved match returns the URL and harvests title and company", async () => {
+    await withStub(
+      () => ({ body: OUT }),
+      async () => {
+        const got = await resolveLinkedIn(lead("approved"));
+        assert.equal(got?.linkedin_url, "https://www.linkedin.com/in/sam-rivera");
+        assert.equal(got?.source, "quick_enrich");
+        // The title is the point: core recall runs 13% -> 36% when it is present.
+        assert.equal(got?.title, "VP, Investment Sales");
+        assert.equal(got?.company, "Example CRE");
+      }
+    );
+  });
+
+  test("an UNAPPROVED candidate is discarded even though a URL is present", async () => {
+    // The single most important line in this module. Every branch of the
+    // workflow decides `linkedinApproved` deliberately — the Gemini judge is
+    // told to reject rather than guess — so reading the URL on its own would
+    // silently undo four vendors' worth of matching and personalize a real
+    // email for the wrong person.
+    await withStub(
+      () => ({ body: { ...OUT, linkedinApproved: false, linkedinConfidence: "low" } }),
+      async () => assert.equal(await resolveLinkedIn(lead("unapproved")), null)
+    );
+  });
+
+  test("the person's location is forwarded so the judge can disambiguate", async () => {
+    const seen = await withStub(
+      () => ({ body: OUT }),
+      async () => void (await resolveLinkedIn({ ...lead("located"), location: "Vancouver, BC" }))
+    );
+    assert.equal(seen[0]?.userEmail, `located-${run}@example-cre.com`);
+    assert.equal(seen[0]?.firstName, "Sam");
+    assert.equal(seen[0]?.lastName, "Rivera");
+    assert.equal(seen[0]?.userLocation, "Vancouver, BC");
+  });
+
+  test("an n8n error is fail-soft, not a dependency failure", async () => {
+    await withStub(
+      () => ({ status: 500, body: { message: "workflow could not be started" } }),
+      async () => assert.equal(await resolveLinkedIn(lead("errored")), null)
+    );
+  });
+
+  test("a response wrapped in an array is still read", async () => {
+    await withStub(
+      () => ({ body: [OUT] }),
+      async () => assert.equal((await resolveLinkedIn(lead("wrapped")))?.source, "quick_enrich")
+    );
+  });
+});
+
+describe("personCached", () => {
+  // Regression for the 502 the live contract check found the first time prod ran
+  // on an empty Neon cache: /people is 19s cold against an 8s cap, the
+  // DeadlineError escaped, and a slow lookup killed the whole lead. deadline.ts
+  // has always documented this leg as degrading to "not resolved".
+  //
+  // The cap is squeezed by handing the ledger an already-expired deadline —
+  // legTimeoutMs() floors at 250ms — so the test costs a quarter second, not 8.
+  test("a Fundable timeout degrades to no person instead of throwing", async () => {
+    const { createServer } = await import("node:http");
+    const { newLedger } = await import("@fundable/shared");
+    const { personCached } = await import("../src/lib/v2/person-cache.js");
+
+    const server = createServer((_req, res) => {
+      // Longer than the 250ms floor, shorter than the test runner's patience.
+      setTimeout(() => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ data: [] }));
+      }, 1_500).unref();
+    });
+    await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
+    const port = (server.address() as { port: number }).port;
+
+    const prevBase = process.env.FUNDABLE_BASE_URL;
+    const prevKey = process.env.FUNDABLE_API_KEY;
+    process.env.FUNDABLE_BASE_URL = `http://127.0.0.1:${port}`;
+    process.env.FUNDABLE_API_KEY ??= "test-key";
+    try {
+      const got = await personCached(
+        "https://www.linkedin.com/in/deadline-probe",
+        newLedger(Date.now() - 1)
+      );
+      assert.equal(got.person, null, "a timeout must not throw");
+      assert.equal(got.timedOut, true, "and must say so, or the degrade is silent");
+    } finally {
+      if (prevBase === undefined) delete process.env.FUNDABLE_BASE_URL;
+      else process.env.FUNDABLE_BASE_URL = prevBase;
+      if (prevKey === undefined) delete process.env.FUNDABLE_API_KEY;
+      server.close();
+    }
   });
 });

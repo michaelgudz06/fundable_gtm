@@ -40,7 +40,6 @@
  *     `undefined` at runtime with no type error.
  */
 
-import { INDUSTRY_ALIASES, LOCATION_ALIASES, ROUND_EXPANSIONS, ROUND_PHRASES } from "./aliases.js";
 import { DeadlineError, fetchWithDeadline, LEG_TIMEOUT_MS, retryOnce } from "./deadline.js";
 import { optionalEnv, requireEnv } from "./env.js";
 
@@ -566,8 +565,6 @@ export async function dealsForCompany(
   };
 }
 
-/** Chunked at 50 per the PRD; the API does not enforce it, so we do. */
-export const MAX_COMPANIES_PER_DEALS_CALL = 50;
 
 // ---------------------------------------------------------------------------
 // Types — /investors
@@ -618,13 +615,6 @@ export async function investorsByIds(
   return buildBatch(slice, data.investors ?? [], (i) => i.id, meta, creditsUsed);
 }
 
-/** Split the comma-joined `investment_stage` string into usable stages. */
-export function investmentStages(investor: Investor): string[] {
-  return (investor.investment_stage ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
 
 // ---------------------------------------------------------------------------
 // Lead investor
@@ -646,76 +636,6 @@ export function leadInvestorProse(deal: Deal | EmbeddedDeal): string | null {
   const short = d.deal_descriptions?.short_description ?? d.description?.short_description;
   if (!short) return null;
   return /\bled by\b/i.test(short) ? short : null;
-}
-
-// ---------------------------------------------------------------------------
-// Resolvers (alias-backed). Unchanged from post-studio.
-// ---------------------------------------------------------------------------
-
-export type FinancingType = { type: string; pre?: boolean; extension?: boolean };
-
-export async function resolveIndustry(term: string, ledger?: Ledger): Promise<string | null> {
-  const key = term.trim().toLowerCase();
-  const alias = INDUSTRY_ALIASES[key];
-  const search = alias?.search ?? key;
-
-  const { data } = await call<{ industries?: { permalink: string; name: string }[] }>(
-    `/industry/search?name=${encodeURIComponent(search)}&limit=25`,
-    undefined,
-    ledger
-  );
-  const hits = data.industries ?? [];
-  if (!hits.length) return null;
-
-  if (alias) {
-    const exact = hits.find((h) => h.permalink === alias.permalink);
-    if (exact) return exact.permalink;
-  }
-  const nameMatch = hits.find((h) => h.name.toLowerCase() === search);
-  return (nameMatch ?? hits[0])!.permalink;
-}
-
-export async function resolveLocation(term: string, ledger?: Ledger): Promise<string | null> {
-  const key = term.trim().toLowerCase();
-  const alias = LOCATION_ALIASES[key];
-  const search = alias?.search ?? key;
-
-  const { data } = await call<{ locations?: { permalink: string; name: string }[] }>(
-    `/location/search?name=${encodeURIComponent(search)}&limit=25`,
-    undefined,
-    ledger
-  );
-  const hits = data.locations ?? [];
-  if (!hits.length) return null;
-
-  // Fundable returns no relevance order, so "austin" can yield Austin, Indiana
-  // first. Only the curated permalink disambiguates the well-known cities.
-  if (alias) {
-    const exact = hits.find((h) => h.permalink === alias.permalink);
-    if (exact) return exact.permalink;
-  }
-  return hits[0]!.permalink;
-}
-
-export function resolveRounds(phrases: string[]): FinancingType[] {
-  const out: FinancingType[] = [];
-  for (const raw of phrases) {
-    const key = raw.trim().toLowerCase();
-    const expanded = ROUND_EXPANSIONS[key];
-    if (expanded) {
-      out.push(...expanded);
-      continue;
-    }
-    const single = ROUND_PHRASES[key];
-    if (single) out.push(single);
-  }
-  const seen = new Set<string>();
-  return out.filter((f) => {
-    const k = `${f.type}|${f.pre ?? false}|${f.extension ?? false}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -768,11 +688,6 @@ export function dealDate(value: string | null | undefined): string | null {
   return d.toISOString().slice(0, 10);
 }
 
-export function daysAgo(n: number): string {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - n);
-  return d.toISOString().slice(0, 10);
-}
 
 /**
  * Greeting name. Fundable returns `first_name`/`last_name` as null even on a hit,

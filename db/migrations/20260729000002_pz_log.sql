@@ -24,8 +24,7 @@ create table if not exists public.pz_log (
   api_key_hash      text,
 
   -- Quoted: TRIGGER is non-reserved in Postgres and works unquoted, but quoting
-  -- costs nothing and removes any doubt. Lowercase-quoted == unquoted, so
-  -- PostgREST and every client still see plain `trigger`.
+  -- costs nothing and removes any doubt.
   "trigger"         text        not null check ("trigger" in ('sign-up', 'website-visitor', 'cold', 'post-raise')),
   channel           text        not null check (channel in ('email', 'linkedin')),
 
@@ -89,14 +88,14 @@ create index if not exists pz_log_retain_idx       on public.pz_log (retain_unti
 -- ---------------------------------------------------------------------------
 -- Access control
 -- ---------------------------------------------------------------------------
--- Same posture as pz_cache, and it matters more here. RLS on with no policies
--- denies anon and authenticated outright; only the secret key (which bypasses
--- RLS) can read or write. The publishable key ships to the browser in the demo
--- UI and must never be able to read generated outbound copy.
-
-alter table public.pz_log enable row level security;
-
-revoke all on public.pz_log from anon, authenticated;
+-- None in-database, for the reasons in pz_cache's migration: Neon has no anon
+-- or authenticated role to deny, and RLS does not apply to a table's owner.
+--
+-- It matters more here than it did there. These rows are the generated outbound
+-- copy plus the named person it was written about. Whoever holds DATABASE_URL
+-- can read all of it, so that string stays server-side and gets rotated the
+-- moment it is exposed. Retention is the other half of the promise, and that one
+-- IS enforced below.
 
 -- ---------------------------------------------------------------------------
 -- Purge

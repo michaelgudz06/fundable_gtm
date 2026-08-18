@@ -20,21 +20,8 @@
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const arg = (n: string, d?: string) => {
-  const i = process.argv.indexOf(`--${n}`);
-  if (i < 0) return d;
-  const v = process.argv[i + 1];
-  // A flag used as a bare switch (`--approve`) has no value after it, and
-  // returning undefined there is how `--approve` came to crash with an opaque
-  // EISDIR: resolve(undefined ?? "") is the CWD, and readFileSync on a
-  // directory throws. Fall back to the default instead. The `--` guard stops
-  // the next FLAG being eaten as this one's value.
-  return v !== undefined && !v.startsWith("--") ? v : d;
-};
+import { join, resolve } from "node:path";
+import { ROOT, arg, parseCsvRows } from "./lib.js";
 
 type Candidate = {
   id: string;
@@ -187,42 +174,8 @@ const AUTHORED: Omit<Candidate, "decision" | "note">[] = [
 
 // ---------------------------------------------------------------------------
 
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = "";
-  let quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (quoted) {
-      if (c === '"') {
-        if (text[i + 1] === '"') {
-          field += '"';
-          i++;
-        } else quoted = false;
-      } else field += c;
-      continue;
-    }
-    if (c === '"') quoted = true;
-    else if (c === ",") {
-      row.push(field);
-      field = "";
-    } else if (c === "\n") {
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = "";
-    } else if (c !== "\r") field += c;
-  }
-  if (field || row.length) {
-    row.push(field);
-    rows.push(row);
-  }
-  return rows.filter((r) => r.some((c) => c.trim() !== ""));
-}
-
 function mineFromExport(csvPath: string): Candidate[] {
-  const grid = parseCsv(readFileSync(csvPath, "utf8").replace(/^﻿/, ""));
+  const grid = parseCsvRows(readFileSync(csvPath, "utf8").replace(/^﻿/, ""));
   const header = (grid[0] ?? []).map((h) => h.trim().toLowerCase());
   const col = (n: string) => header.indexOf(n);
   const iLi = col("linkedin url");
@@ -290,7 +243,7 @@ function mineFromExport(csvPath: string): Candidate[] {
  *   npx tsx scripts/build-gold-set.ts --enrich <export.csv>
  */
 function enrichQueue(csvPath: string, queuePath: string): void {
-  const grid = parseCsv(readFileSync(csvPath, "utf8").replace(/^\ufeff/, ""));
+  const grid = parseCsvRows(readFileSync(csvPath, "utf8").replace(/^\ufeff/, ""));
   const header = (grid[0] ?? []).map((h) => h.trim().toLowerCase());
   const col = (n: string) => header.indexOf(n);
   const iLi = col("linkedin url");

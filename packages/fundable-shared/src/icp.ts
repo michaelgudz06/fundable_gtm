@@ -14,8 +14,6 @@
  * error type that keeps an outage from being reported as a verdict.
  */
 
-import { answer, ExaError, type ExaLedger } from "./exa.js";
-
 /**
  * Infrastructure failure during classification. Distinct from "Not Core ICP",
  * which is a JUDGMENT. QA caught the difference the hard way: a dead fetch was
@@ -29,7 +27,6 @@ export class ClassificationError extends Error {
     this.name = "ClassificationError";
   }
 }
-import { MODEL_PLAN, complete, parseJson, type Usage } from "./openrouter.js";
 
 // ---------------------------------------------------------------------------
 // Taxonomy — names must match the Python scripts EXACTLY. They are written to

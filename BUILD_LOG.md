@@ -64,11 +64,11 @@ packages/fundable-shared/   @fundable/shared — Fundable client, alias tables,
 apps/api/                   Next.js 16 app (:3111)
   src/app/api/personalize/  POST route: auth, rate limit, validation
   src/lib/pipeline/         resolve → facts → confidence → angle → write+verify
-  src/lib/storage.ts        Storage interface: Supabase REST impl + no-op fallback
+  src/lib/storage.ts        Storage interface: Neon impl + no-op fallback
 config/voice/jacob.json     Voice profile. A second voice is a data change.
 config/sender/default.json  Named sender_context blocks (safe generic facts only)
-supabase/migrations/        pz_cache + pz_log schema (applied + verified)
-scripts/verify-supabase.ts  npm run verify:supabase
+db/migrations/              pz_cache + pz_log schema (applied + verified)
+scripts/verify-db.ts        npm run verify:db
 ```
 
 Pipeline stages (spec §2) and where each lives:
@@ -330,35 +330,50 @@ While provenance is `placeholder`, `provenanceWarning()` returns a warning the A
 must include in every response. It returns `null` on its own once Jacob's 10-20
 real sent emails land and provenance flips to `real_examples`.
 
-## Supabase
+## Database (Neon)
 
-Project ref lives in `.env` as `SUPABASE_URL` (not recorded here — a repo is the
-wrong place for a project identifier). Confirmed reachable and authenticating with both
-the secret and publishable keys. `.mcp.json` in this repo points the `supabase`
-MCP server at it (the global `~/.mcp.json` still points at a deleted project, so
-the project-scoped entry is what you want for this repo).
+Connection string lives in `.env` as `DATABASE_URL` (not recorded here — a repo is
+the wrong place for a credential, and this one is host, user and password in a
+single string). Driver is `@neondatabase/serverless` in HTTP mode: stateless, no
+pool to leak across serverless invocations.
 
-**Both migrations are applied and verified** (2026-07-29). `pz_cache` and `pz_log`
-exist, every column the pipeline writes is present, and the storage layer is
-unblocked for M5.
+**Both migrations are applied and verified** (2026-08-16). `pz_cache` and `pz_log`
+exist on PostgreSQL 18.4, every column the pipeline writes is present, and both
+purge functions are callable.
 
 ```bash
-npm run verify:supabase
+npm run verify:db
 ```
 
-Re-runnable any time. It checks both tables, all 40 columns, that `retain_until`
-really defaults to +90 days (it inserts a row, measures the delta, and deletes it,
-rather than trusting the DDL), and that both purge functions are callable.
+Re-runnable any time. It checks both tables and every column, then drives the
+**real `NeonStorage`** — not hand-written SQL — through a cache round-trip, an
+upsert on `(cache_key, source)`, an expiry miss, and a 28-column log insert. That
+second half exists because no unit test touches storage: all 123 run against
+`NoopStorage`, so a completely broken driver passes `npm test`. It also asserts
+that `retain_until` really defaults to +90 days by inserting a row, measuring the
+delta and deleting it, rather than trusting the DDL.
 
-It also asserts the security property the migrations exist for: **the publishable
-key is denied on both tables** (verified HTTP 401). `pz_log` holds generated
-outbound copy about real people and the publishable key ships to the browser in
-the demo UI, so "RLS is enabled" is not the same claim as "the browser key cannot
-read it". The script checks the second one.
+To apply from scratch, run the files in `db/migrations/` in filename order.
 
-To re-apply from scratch, paste both files in filename order into the dashboard
-SQL editor, or use `apply_migration` from a session where the Supabase MCP is
-authenticated (`claude /mcp` → `supabase` → Authenticate).
+### Why this is not Supabase any more
+
+It was, until the project behind it was deleted. `getStorage()` falls back to
+`NoopStorage` whenever its env var is missing and every method swallows its own
+errors, so the API kept returning 200s while the classification cache, the person
+cache, idempotency and the request log were all silently off — for weeks. Two
+changes came out of that:
+
+- **Set `DATABASE_URL` before deploying, not after.** Absent config is
+  indistinguishable from working config from the outside.
+- **Storage is now bounded by `LEG_TIMEOUT_MS.storage` (2s).** It used a bare
+  `fetch` with no timeout, so a dead host added latency to every request instead
+  of failing fast. It was the one network path `deadline.ts` did not cover.
+
+The migrations no longer carry RLS. Neon has no `anon` or `authenticated` role to
+deny, and RLS does not apply to a table's owner, so the old `revoke` statements
+would simply error. The control that replaced them is that `DATABASE_URL` never
+leaves the server — which is also why the demo's key gate rejects anything
+starting `postgres://` or `postgresql://`.
 
 ## Guardrails this repo keeps
 

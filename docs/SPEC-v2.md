@@ -11,13 +11,16 @@ document and those files disagree, fix the files, not the prompts.
 
 `POST /api/v1/personalize` is the shared decision layer for signup, website
 visitors, Resend follow-ups, and cold outbound. Input: identity, message type,
-exactly one template source, optional context. Output: **exactly three keys** —
-one ICP, up to three ranked use cases from the approved catalog, one complete
+exactly one template source, optional context. Output: **exactly six keys** —
+the resolved identity echoed back (`full_name`, `email`, `linkedin_url`), one
+ICP, up to three ranked use cases from the approved catalog, one complete
 plain-text email body. Deterministic hard gates run before model judgment;
 versioned registries; fail closed on insufficient identity or customer evidence.
 
-v1 owns: identity normalization/resolution, company research, one canonical ICP
-or Not Core, catalog use-case selection, template adaptation, output validation.
+v1 owns: identity normalization/resolution, find-LinkedIn (delegated to the n8n
+`Resolve LinkedIn Profile` cascade and fail-soft), company research, one
+canonical ICP or Not Core, catalog use-case selection, template adaptation,
+output validation.
 
 v1 does NOT own: sending, consent/suppression/deliverability, recipient
 selection, sequencing, CRM mutation, HTML, subject lines, multi-variant
@@ -27,14 +30,29 @@ generation, custom models.
 
 - Auth: internal bearer. `Idempotency-Key` supported. Version headers on
   success (registry, use-case catalog, template, prompt, model).
-- Required: `email`, `message_type`, exactly one of `template_id` |
-  `email_template`. Optional `known_fields` (linkedin_url, first_name, title,
-  company_name, industry, domain) and `additional_context` (territory,
-  target_buyer_role, source_surface, locations, signup/plan state, campaign,
+- Required: `email`, `known_fields.first_name`, `known_fields.last_name`,
+  `message_type`, exactly one of `template_id` | `email_template`. The two names
+  became mandatory on 2026-08-16 (Jacob): the find-LinkedIn cascade matches on
+  name, so a nameless lead cannot be resolved at all, and "Hi there," is the
+  classic tell that a machine sent it. Optional `known_fields` (linkedin_url,
+  title, company_name, company_domain, location) and `additional_context`
+  (territory, target_buyer_role, source_surface, signup/plan state, campaign,
   sender_name, notes).
+- `known_fields.location` is the PERSON's location, distinct from
+  `additional_context.territory` (a sales region, which selects use cases). It is
+  used only to disambiguate same-name candidates during LinkedIn resolution and
+  is deliberately never passed to the composer — naming where a recipient is
+  sitting is the same we-can-see-you problem the visitor-city rule blocks.
 - Context is untrusted: it can never override ICP rules, claim policy, template
   policy, or privacy controls.
-- Success body: `{ icp, icp_use_cases, email_body }` and nothing else.
+- Success body: `{ full_name, email, linkedin_url, icp, icp_use_cases,
+  email_body }` and nothing else. Widened from three keys on 2026-08-16
+  (Jacob's v2 shape) — **additively**, so a caller already reading
+  `icp_use_cases` is unaffected. The three identity keys echo what the request
+  resolved to, so a spreadsheet row can be joined back to its answer;
+  `full_name` is `null` when no name was supplied, `linkedin_url` `null` when
+  none was. `last_name` is accepted in `known_fields` to build `full_name` and
+  is never composed into copy — GEN policy allows a first name and nothing else.
   Not Core → empty use-case list + approved generic body. No unresolved tokens,
   no HTML, no subject, no empty salutation, no unsupported claim.
 - Caller errors 400/409/422; dependency failures 429/502/504; never partial

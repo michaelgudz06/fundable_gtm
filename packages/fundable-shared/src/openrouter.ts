@@ -76,7 +76,6 @@ export async function complete(
 
   return new Promise<CompleteResult>((resolve, reject) => {
     let settled = false;
-    let hedgeStarted = false;
     let inFlight = 1;
 
     const win = (value: CompleteResult, loser: AbortController) => {
@@ -89,6 +88,9 @@ export async function complete(
     const lose = (err: unknown) => {
       inFlight--;
       // Losers aborted by the winner arrive here too; `settled` swallows them.
+      // This is also what makes a fast primary failure (e.g. a 4xx) fail the
+      // whole call rather than wait for the hedge: with no hedge in flight yet
+      // `inFlight` hits 0, and a second identical call would fail identically.
       if (!settled && inFlight <= 0) {
         settled = true;
         clearTimeout(timer);
@@ -100,14 +102,9 @@ export async function complete(
 
     const timer = setTimeout(() => {
       if (settled) return;
-      hedgeStarted = true;
       inFlight++;
       completeOnce(messages, opts, ctlB.signal).then((v) => win(v, ctlA), lose);
     }, hedgeAfterMs);
-
-    // If the primary fails fast (e.g. a 4xx) before the hedge exists, a second
-    // identical call would fail identically — fail now rather than hedging.
-    void hedgeStarted;
   });
 }
 

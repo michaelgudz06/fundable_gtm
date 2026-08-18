@@ -1,14 +1,19 @@
 /**
  * Storage behind a small interface so it stays swappable (spec §1.6).
  *
- * Two implementations: Supabase over plain PostgREST (no SDK dependency for two
- * tables), and a no-op used when SUPABASE_URL is absent. Storage must never
- * break a request — a personalization that worked is not made a failure by a
- * logging hiccup — so every method catches, records the problem, and returns.
- * The orchestrator surfaces `lastError` as a response warning instead.
+ * Two implementations: Neon over its serverless HTTP driver, and a no-op used
+ * when DATABASE_URL is absent. Storage must never break a request — a
+ * personalization that worked is not made a failure by a logging hiccup — so
+ * every method catches, records the problem, and returns. The orchestrator
+ * surfaces `lastError` as a response warning instead.
+ *
+ * That swappability was not theoretical: this file was Supabase-over-PostgREST
+ * until the project behind it disappeared. Nothing above `getStorage()` changed
+ * when it moved here.
  */
 
-import { optionalEnv } from "@fundable/shared";
+import { neon } from "@neondatabase/serverless";
+import { LEG_TIMEOUT_MS, optionalEnv } from "@fundable/shared";
 
 export type CacheSource = "fundable" | "exa";
 
@@ -60,21 +65,22 @@ class NoopStorage implements Storage {
   async log() {}
 }
 
-class SupabaseStorage implements Storage {
+class NeonStorage implements Storage {
   lastError: string | null = null;
 
-  constructor(
-    private readonly url: string,
-    private readonly secret: string
-  ) {}
+  constructor(private readonly conn: string) {}
 
-  private headers(extra: Record<string, string> = {}) {
-    return {
-      apikey: this.secret,
-      Authorization: `Bearer ${this.secret}`,
-      "Content-Type": "application/json",
-      ...extra,
-    };
+  /**
+   * A fresh client per operation, because the abort signal has to be fresh too.
+   * `AbortSignal.timeout` starts counting when it is created, so a signal built
+   * once in the constructor would already be half-spent by the time `log()` runs
+   * at the end of a 13-second request. HTTP mode holds no connection, so this
+   * costs a closure.
+   */
+  private sql() {
+    return neon(this.conn, {
+      fetchOptions: { signal: AbortSignal.timeout(LEG_TIMEOUT_MS.storage) },
+    });
   }
 
   private note(op: string, err: unknown) {
@@ -84,16 +90,16 @@ class SupabaseStorage implements Storage {
 
   async cacheGet(key: string, source: CacheSource): Promise<unknown | null> {
     try {
-      const qs = new URLSearchParams({
-        cache_key: `eq.${key}`,
-        source: `eq.${source}`,
-        expires_at: `gt.${new Date().toISOString()}`,
-        select: "payload",
-        limit: "1",
-      });
-      const res = await fetch(`${this.url}/rest/v1/pz_cache?${qs}`, { headers: this.headers() });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const rows = (await res.json()) as { payload: unknown }[];
+      const sql = this.sql();
+      // Tagged template: `${key}` is a bind parameter, never interpolated text.
+      const rows = await sql`
+        select payload
+          from public.pz_cache
+         where cache_key = ${key}
+           and source = ${source}
+           and expires_at > now()
+         limit 1
+      `;
       return rows[0]?.payload ?? null;
     } catch (err) {
       this.note("cacheGet", err);
@@ -103,22 +109,20 @@ class SupabaseStorage implements Storage {
 
   async cacheSet(key: string, source: CacheSource, payload: unknown, ttlMs: number): Promise<void> {
     try {
-      const res = await fetch(
-        // Upsert on the (cache_key, source) unique constraint.
-        `${this.url}/rest/v1/pz_cache?on_conflict=cache_key,source`,
-        {
-          method: "POST",
-          headers: this.headers({ Prefer: "resolution=merge-duplicates" }),
-          body: JSON.stringify({
-            cache_key: key,
-            source,
-            payload,
-            fetched_at: new Date().toISOString(),
-            expires_at: new Date(Date.now() + ttlMs).toISOString(),
-          }),
-        }
-      );
-      if (!res.ok) throw new Error(`HTTP ${res.status} ${(await res.text()).slice(0, 150)}`);
+      const sql = this.sql();
+      const now = new Date();
+      // TTL stays in application code, per the migration's note on expires_at.
+      const expiresAt = new Date(now.getTime() + ttlMs);
+      // jsonb needs the string form plus an explicit cast — handing the driver a
+      // JS object binds it as a Postgres array and the insert fails on type.
+      await sql`
+        insert into public.pz_cache (cache_key, source, payload, fetched_at, expires_at)
+        values (${key}, ${source}, ${JSON.stringify(payload)}::jsonb, ${now.toISOString()}, ${expiresAt.toISOString()})
+        on conflict (cache_key, source) do update
+           set payload    = excluded.payload,
+               fetched_at = excluded.fetched_at,
+               expires_at = excluded.expires_at
+      `;
     } catch (err) {
       this.note("cacheSet", err);
     }
@@ -126,12 +130,44 @@ class SupabaseStorage implements Storage {
 
   async log(row: LogRow): Promise<void> {
     try {
-      const res = await fetch(`${this.url}/rest/v1/pz_log`, {
-        method: "POST",
-        headers: this.headers(),
-        body: JSON.stringify(row),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status} ${(await res.text()).slice(0, 150)}`);
+      const sql = this.sql();
+      // The column list is written out rather than derived from Object.keys(row):
+      // a reordered or renamed field in LogRow should fail to compile here, not
+      // silently write `subject` into `body`. "trigger" stays quoted to match
+      // the migration.
+      await sql.query(
+        `insert into public.pz_log (
+           api_key_hash, "trigger", channel,
+           person_email, person_linkedin, person_name,
+           sender_context, max_facts, template_provided,
+           company_id, company_name, company_domain, person_id,
+           status, confidence, angle, subject, body,
+           evidence, warnings, verify_issues, verify_retried,
+           fundable_credits, exa_cost_usd, llm_tokens, latency_ms,
+           voice_id, voice_provenance
+         ) values (
+           $1, $2, $3,
+           $4, $5, $6,
+           $7, $8, $9,
+           $10, $11, $12, $13,
+           $14, $15, $16, $17, $18,
+           $19::jsonb, $20::jsonb, $21::jsonb, $22,
+           $23, $24, $25, $26,
+           $27, $28
+         )`,
+        [
+          row.api_key_hash, row.trigger, row.channel,
+          row.person_email, row.person_linkedin, row.person_name,
+          row.sender_context, row.max_facts, row.template_provided,
+          row.company_id, row.company_name, row.company_domain, row.person_id,
+          row.status, row.confidence, row.angle, row.subject, row.body,
+          JSON.stringify(row.evidence), JSON.stringify(row.warnings),
+          row.verify_issues === null ? null : JSON.stringify(row.verify_issues),
+          row.verify_retried,
+          row.fundable_credits, row.exa_cost_usd, row.llm_tokens, row.latency_ms,
+          row.voice_id, row.voice_provenance,
+        ]
+      );
     } catch (err) {
       this.note("log", err);
     }
@@ -146,8 +182,7 @@ export const CACHE_TTL_MS: Record<CacheSource, number> = {
 
 /** Per-request instance so `lastError` cannot leak across requests. */
 export function getStorage(): Storage {
-  const url = optionalEnv("SUPABASE_URL");
-  const secret = optionalEnv("SUPABASE_SECRET_KEY");
-  if (!url || !secret) return new NoopStorage();
-  return new SupabaseStorage(url.replace(/\/$/, ""), secret);
+  const conn = optionalEnv("DATABASE_URL");
+  if (!conn) return new NoopStorage();
+  return new NeonStorage(conn);
 }

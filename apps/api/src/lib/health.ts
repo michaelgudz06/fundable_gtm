@@ -8,51 +8,79 @@
  *
  * Paid upstreams are checked for CONFIGURATION only. A health check that spends
  * credits on every page load is a bug, not a feature.
+ *
+ * The database follows the same rule now, for a reason that is not about money.
+ * The overview page is `force-dynamic` and calls this on every render, so while
+ * the probe ran by default the PUBLIC HOME PAGE was a database poller: a crawler
+ * hitting `/` was enough to keep a scale-to-zero Neon compute permanently awake.
+ * The probe is therefore opt-in — `/api/health?deep=1` — and the default answer
+ * describes configuration alone.
  */
 
-import { optionalEnv } from "@fundable/shared";
+import { neon } from "@neondatabase/serverless";
+import { LEG_TIMEOUT_MS, optionalEnv } from "@fundable/shared";
 
 export type Dep = {
   name: string;
   configured: boolean;
-  /** null = deliberately not probed, because probing costs money. */
+  /** null = deliberately not probed (costs money, or would wake the database). */
   reachable: boolean | null;
   detail: string;
 };
 
-async function checkSupabase(): Promise<Dep> {
-  const name = "Supabase (cache + log)";
-  const url = optionalEnv("SUPABASE_URL");
-  const secret = optionalEnv("SUPABASE_SECRET_KEY");
+async function checkNeon(deep: boolean): Promise<Dep> {
+  const name = "Neon (cache + log)";
+  const conn = optionalEnv("DATABASE_URL");
 
-  if (!url || !secret) {
+  if (!conn) {
     return {
       name,
       configured: false,
       reachable: null,
-      detail: "SUPABASE_URL or SUPABASE_SECRET_KEY not set — cache and request log no-op",
+      detail: "DATABASE_URL not set — cache and request log no-op",
+    };
+  }
+
+  if (!deep) {
+    return {
+      name,
+      configured: true,
+      reachable: null,
+      detail: "DATABASE_URL set (not probed — add ?deep=1 to actually query)",
     };
   }
 
   try {
-    // Zero-row select: proves the table exists and RLS admits the secret key,
-    // without reading anyone's data.
-    const res = await fetch(`${url.replace(/\/$/, "")}/rest/v1/pz_log?select=id&limit=0`, {
-      headers: { apikey: secret, Authorization: `Bearer ${secret}` },
-      cache: "no-store",
+    const sql = neon(conn, {
+      fetchOptions: { signal: AbortSignal.timeout(LEG_TIMEOUT_MS.storage) },
     });
+    // Proves the connection works AND both tables exist, without reading a row
+    // of anyone's data.
+    const rows = await sql`
+      select to_regclass('public.pz_cache') is not null
+         and to_regclass('public.pz_log')   is not null as ready
+    `;
+    const ready = (rows[0] as { ready: boolean } | undefined)?.ready === true;
     return {
       name,
       configured: true,
-      reachable: res.ok,
-      detail: res.ok ? "pz_cache + pz_log reachable" : `HTTP ${res.status} — are the migrations applied?`,
+      reachable: ready,
+      detail: ready ? "pz_cache + pz_log reachable" : "connected, but a table is missing — apply db/migrations/",
     };
   } catch (err) {
-    return { name, configured: true, reachable: false, detail: (err as Error).message.slice(0, 120) };
+    // Deliberately not echoed to the caller: this endpoint is unauthenticated,
+    // and driver errors carry the database host.
+    console.warn(`[health] Neon probe failed: ${(err as Error).message}`);
+    return {
+      name,
+      configured: true,
+      reachable: false,
+      detail: "unreachable — check DATABASE_URL and that db/migrations are applied",
+    };
   }
 }
 
-export async function checkHealth(): Promise<{ ok: boolean; deps: Dep[] }> {
+export async function checkHealth(opts: { deep?: boolean } = {}): Promise<{ ok: boolean; deps: Dep[] }> {
   const deps: Dep[] = [
     {
       name: "Fundable REST",
@@ -78,7 +106,7 @@ export async function checkHealth(): Promise<{ ok: boolean; deps: Dep[] }> {
         ? "key present (not probed — tokens cost money)"
         : "OPENROUTER_API_KEY missing — angle selection and writing will fail",
     },
-    await checkSupabase(),
+    await checkNeon(opts.deep === true),
     {
       name: "This API's own auth",
       configured: !!optionalEnv("PERSONALIZE_API_KEY"),

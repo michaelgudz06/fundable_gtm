@@ -1,9 +1,15 @@
 /**
  * POST /api/v1/personalize — the shared decision layer (SPEC-v2).
  *
- * Success body is EXACTLY { icp, icp_use_cases, email_body } (API-003). Version
- * headers carry every operative registry so a bad answer is traceable to the
- * data that produced it. Errors never include partial business output.
+ * Success body is { full_name, email, linkedin_url, icp, icp_use_cases,
+ * email_body }. API-003 pinned this to exactly the last three; the identity
+ * echo was added 2026-08-16 for Jacob's v2 shape. Deliberately ADDITIVE — a
+ * caller reading `icp_use_cases` today keeps working, which a replacement
+ * object would have broken. The echo is what the request resolved to, so a row
+ * in a spreadsheet can be matched back to its answer without re-deriving it.
+ *
+ * Version headers carry every operative registry so a bad answer is traceable
+ * to the data that produced it. Errors never include partial business output.
  *
  * Pipeline: validate → template resolution → identity → research+classify →
  * use-case selection → compose → validate output. Fail closed at every gate.
@@ -16,18 +22,20 @@ import {
   MODEL_PLAN,
   newLedger,
   normalizeDomain,
-  normalizeEmail,
   startBudget,
-  normalizeLinkedIn,
-  personByLinkedIn,
   verifyCopy,
   blockingIssues,
 } from "@fundable/shared";
+
+import { createHash } from "node:crypto";
 
 import { checkAuth, checkRateLimit } from "../../../../lib/auth";
 import { getStorage } from "../../../../lib/storage";
 import { researchTarget, startResearch, CLASSIFIER_PROMPT_VERSION } from "../../../../lib/v2/classify";
 import { classifyCached, registryFingerprint } from "../../../../lib/v2/classify-cached";
+import { personCached } from "../../../../lib/v2/person-cache";
+import { resolveLinkedIn } from "../../../../lib/v2/resolve-linkedin";
+import { newTrace, record, type Trace } from "../../../../lib/v2/request-log";
 import {
   composeFromTemplate,
   composeNotCore,
@@ -45,8 +53,6 @@ import {
   approvedClaimTexts,
   type MessageType,
 } from "../../../../lib/v2/registry";
-
-import { createHash } from "node:crypto";
 
 export const runtime = "nodejs";
 
@@ -82,145 +88,19 @@ type RequestBody = {
   email_template?: unknown;
   known_fields?: {
     first_name?: unknown;
+    last_name?: unknown;
     title?: unknown;
     company_name?: unknown;
     company_domain?: unknown;
     linkedin_url?: unknown;
+    location?: unknown;
   };
   additional_context?: Record<string, unknown>;
 };
 
-/**
- * One row per request, for the metrics the spec asks for and nothing emitted:
- * label distribution, Not Core rate, cache hit rate, output-validation failures,
- * latency, cost, and which registry versions produced the answer.
- *
- * Deliberately PII-minimised. The legacy pipeline writes person_email and the
- * full body into this same table; this route writes NEITHER. What a metric needs
- * is the shape of the decision, not who it was about — and a log that answers
- * "what is our Not Core rate this week" without storing a single address is
- * strictly better than one that cannot be shared.
- */
-async function record(
-  storage: ReturnType<typeof getStorage>,
-  keyHash: string,
-  fields: {
-    messageType: string;
-    status: string;
-    icp: string | null;
-    trace: Trace;
-    handlerMs: number;
-    fundableCredits: number;
-    exaUsd: number;
-    llmTokens: number;
-    warnings: string[];
-    validationIssues: unknown[];
-  }
-): Promise<void> {
-  try {
-    await storage.log({
-      api_key_hash: keyHash,
-      trigger: fields.messageType,
-      channel: "v1/personalize",
-      // PII columns stay null on this route. See the note above.
-      person_email: null,
-      person_linkedin: null,
-      person_name: null,
-      sender_context: null,
-      max_facts: 0,
-      template_provided: fields.trace.bodySource === "caller_template",
-      company_id: null,
-      company_name: null,
-      company_domain: null,
-      person_id: null,
-      status: fields.status,
-      confidence: null,
-      angle: fields.icp,
-      subject: null,
-      body: null,
-      evidence: [
-        {
-          registry: REGISTRY_VERSIONS.icp_registry,
-          use_cases: REGISTRY_VERSIONS.use_case_catalog,
-          templates: REGISTRY_VERSIONS.template_catalog,
-          claims: REGISTRY_VERSIONS.approved_claims,
-          prompt: CLASSIFIER_PROMPT_VERSION,
-          model_requested: MODEL_PLAN,
-          model_served: fields.trace.modelServed || null,
-          classification: fields.trace.classification,
-          agreement: fields.trace.agreement || null,
-          body_source: fields.trace.bodySource,
-          use_case_type: fields.trace.useCaseType,
-          stage_ms: {
-            identity: fields.trace.identity,
-            research: fields.trace.research,
-            model: fields.trace.model,
-          },
-        },
-      ],
-      warnings: fields.warnings,
-      verify_issues: fields.validationIssues.length ? fields.validationIssues : null,
-      verify_retried: false,
-      fundable_credits: fields.fundableCredits,
-      exa_cost_usd: Number(fields.exaUsd.toFixed(6)),
-      llm_tokens: fields.llmTokens,
-      latency_ms: fields.handlerMs,
-      voice_id: null,
-      voice_provenance: null,
-    });
-  } catch {
-    // Telemetry must never fail a send. A dropped metric is a worse day than a
-    // dropped email only for us.
-  }
-}
-
-/** Per-leg upstream timings, reported on every response as X-Stage-Ms. */
-type Trace = {
-  identity: number;
-  research: number;
-  model: number;
-  /** Which body the caller actually received — see X-Body-Source. */
-  bodySource: "caller_template" | "catalog_template" | "generic_fallback" | "none";
-  /** Whether the label came from the classifier or from the stable cache. */
-  classification: "fresh" | "cached" | "none";
-  /** Vote agreement, e.g. "3/3" — surfaced so a caller can gate review on it. */
-  agreement: string;
-  /** The model the provider actually served, not the one we asked for. */
-  modelServed: string;
-  /** alert | mcp | none — which frame the body was composed from. */
-  useCaseType: string;
-};
-
-/** Fundable's own TTL for person records elsewhere in this codebase. */
-const PERSON_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-
-
-/**
- * Identity lookups are cached because the upstream endpoint is slow on a cold
- * path (19s measured, against 2.6s warm) and a lead list re-run — a retry, a
- * second campaign, an n8n replay — asks the same question about the same people.
- *
- * A miss is cached too: "this LinkedIn URL is not in Fundable" is a stable
- * answer, and without it every unknown lead pays the slow path on every send.
- */
-async function personCached(
-  linkedin: string,
-  ledger: ReturnType<typeof newLedger>
-): Promise<{ person: Awaited<ReturnType<typeof personByLinkedIn>>["person"] }> {
-  const storage = getStorage();
-  const key = `person:${normalizeLinkedIn(linkedin) ?? linkedin.trim().toLowerCase()}`;
-  const hit = (await storage.cacheGet(key, "fundable")) as { person: unknown } | null;
-  if (hit && typeof hit === "object" && "person" in hit) {
-    return { person: hit.person as never };
-  }
-  const { person } = await personByLinkedIn(linkedin, ledger);
-  await storage.cacheSet(key, "fundable", { person: person ?? null }, PERSON_TTL_MS);
-  return { person };
-}
-
 export async function POST(req: Request): Promise<Response> {
   const started = Date.now();
-  const trace: Trace = { identity: 0, research: 0, model: 0, bodySource: "none", classification: "none", agreement: "", modelServed: "", useCaseType: "none" };
+  const trace = newTrace();
   const res = await handle(req, trace);
   res.headers.set("X-Handler-Ms", String(Date.now() - started));
   res.headers.set(
@@ -234,6 +114,8 @@ export async function POST(req: Request): Promise<Response> {
   res.headers.set("X-Classification", trace.classification);
   if (trace.modelServed) res.headers.set("X-Model-Served", trace.modelServed);
   res.headers.set("X-Use-Case-Type", trace.useCaseType);
+  if (trace.linkedinSource) res.headers.set("X-Linkedin-Source", trace.linkedinSource);
+  if (trace.identityTimedOut) res.headers.set("X-Identity", "timeout");
   if (trace.agreement) res.headers.set("X-Classifier-Agreement", trace.agreement);
   return res;
 }
@@ -262,6 +144,22 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return err(400, "INVALID_REQUEST", "A valid `email` is required.");
   }
+  // Names are mandatory as of 2026-08-16 (Jacob). Two reasons they are worth a
+  // 400 rather than a soft fallback: the find-LinkedIn cascade matches on name,
+  // so a nameless lead cannot be resolved at all; and "Hi there," is the classic
+  // tell that a machine sent it. `composeFromTemplate` still carries the
+  // no-name fallback as defence in depth — this gate is what makes it unreachable.
+  const kfIn = body.known_fields ?? {};
+  const firstName = typeof kfIn.first_name === "string" ? kfIn.first_name.trim() : "";
+  const lastName = typeof kfIn.last_name === "string" ? kfIn.last_name.trim() : "";
+  if (!firstName || !lastName) {
+    return err(
+      400,
+      "INVALID_REQUEST",
+      "`known_fields.first_name` and `known_fields.last_name` are both required."
+    );
+  }
+
   const messageType = body.message_type as MessageType;
   if (!MESSAGE_TYPES.includes(messageType)) {
     return err(400, "INVALID_REQUEST", `\`message_type\` must be one of: ${MESSAGE_TYPES.join(", ")}.`);
@@ -295,10 +193,28 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
   // ---- idempotency (API-005) ------------------------------------------------
   const storage = getStorage();
   const idemKey = req.headers.get("idempotency-key")?.trim();
-  if (idemKey) {
-    const cached = (await storage.cacheGet(`idem:${registryFingerprint()}:${idemKey}`, "fundable")) as Record<string, unknown> | null;
+  // Namespaced by the request body as well as the registries. An idempotency
+  // key is a retry token; a caller that reuses one for a DIFFERENT body was
+  // being handed the first lead's body back as if it were the second lead's —
+  // silently, with a 200. Different body now means a different key, so it
+  // recomputes instead. A genuine retry re-sends identical bytes and still
+  // replays. (Stripe answers this with a 409 on reuse; that needs an error
+  // path and a stored request hash, and recomputing is the safe direction.)
+  const idemCacheKey = idemKey
+    ? `idem:${registryFingerprint()}:${createHash("sha256")
+        .update(JSON.stringify(body))
+        .digest("hex")
+        .slice(0, 32)}:${idemKey}`
+    : "";
+  if (idemCacheKey) {
+    const cached = (await storage.cacheGet(idemCacheKey, "fundable")) as Record<string, unknown> | null;
     if (cached) {
+      // Rebuilt key-by-key rather than echoed: a stored object from an older
+      // response shape must not leak fields this version no longer promises.
       const canonical = {
+        full_name: cached.full_name ?? null,
+        email: cached.email,
+        linkedin_url: cached.linkedin_url ?? null,
         icp: cached.icp,
         icp_use_cases: cached.icp_use_cases,
         email_body: cached.email_body,
@@ -314,12 +230,18 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
   const exa = newExaLedger(deadlineAt);
   const kf = body.known_fields ?? {};
   const ctxIn = body.additional_context ?? {};
-  const linkedin =
+  let linkedin =
     typeof body.linkedin_url === "string"
       ? body.linkedin_url
       : typeof kf.linkedin_url === "string"
         ? kf.linkedin_url
         : undefined;
+  // The PERSON's location, not a sales territory (that is `additional_context.
+  // territory`, and it selects use cases). Used only to disambiguate two people
+  // with the same name during LinkedIn resolution — deliberately NOT added to
+  // ComposeContext, because naming where someone is sitting is the same
+  // we-can-see-you creepiness the privacy rule blocks for visitor city.
+  const location = typeof kf.location === "string" ? kf.location.trim() || undefined : undefined;
 
   try {
     // ---- identity (ID-001..004) --------------------------------------------
@@ -343,8 +265,9 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
 
     if (linkedin) {
       const tIdentity = Date.now();
-      const { person } = await personCached(linkedin, fundable);
+      const { person, timedOut } = await personCached(linkedin, fundable);
       trace.identity = Date.now() - tIdentity;
+      trace.identityTimedOut = timedOut;
       if (person) {
         title = title ?? person.title ?? undefined;
         company = company ?? person.current_company?.name ?? undefined;
@@ -368,6 +291,24 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
         // For a personal address the profile's employer is the best evidence we
         // have — better than the caller's assertion, and far better than a name.
         if (employerDomain && isFreemail(emailDomain)) researchDomain = employerDomain;
+      }
+    } else {
+      // Step 1 of Jacob's flow: no LinkedIn, so go find one. Skipped entirely
+      // when the caller supplied a URL, which both live surfaces do.
+      //
+      // No `personCached` follow-up on the resolved URL. The cascade already
+      // returns the title and company that lookup would have supplied, and
+      // spending another 8s leg plus a Fundable credit to re-learn a fact we
+      // are holding would be the whole latency budget for nothing.
+      const tResolve = Date.now();
+      const found = await resolveLinkedIn({ email, firstName, lastName, location, deadlineAt });
+      trace.identity = Date.now() - tResolve;
+      if (found) {
+        linkedin = found.linkedin_url;
+        trace.linkedinSource = found.source;
+        // Gap-filling only: the caller's own assertion outranks a vendor's guess.
+        title = title ?? found.title;
+        company = company ?? found.company;
       }
     }
 
@@ -407,7 +348,7 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
     // Context is typed and allowlisted (CTX-001): unknown keys are ignored, and
     // nothing here can override policy because policy never reads it.
     const ctx: ComposeContext = {
-      first_name: typeof kf.first_name === "string" ? kf.first_name.trim() || undefined : undefined,
+      first_name: firstName,
       company_name: company,
       territory: typeof ctxIn.territory === "string" ? ctxIn.territory.trim() || undefined : undefined,
       target_buyer_role:
@@ -485,20 +426,29 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
       return err(502, "OUTPUT_VALIDATION_FAILED", "Final body failed validation.", finalIssues);
     }
 
-    // ---- success: EXACTLY three keys (API-003) ------------------------------
+    // ---- success (API-003, extended 2026-08-16) -----------------------------
+    // `last_name` is echoed but never composed with: GEN policy allows a first
+    // name in copy and nothing else, so it exists only to build `full_name`.
     const success = {
+      full_name: `${firstName} ${lastName}`,
+      email,
+      // What the request actually resolved to, not what was asked for.
+      linkedin_url: linkedin ?? null,
       icp: cls.label,
       icp_use_cases: useCases,
       email_body: emailBody,
     };
 
-    if (idemKey) {
-      await storage.cacheSet(`idem:${registryFingerprint()}:${idemKey}`, "fundable", success, IDEMPOTENCY_TTL_MS);
+    if (idemCacheKey) {
+      await storage.cacheSet(idemCacheKey, "fundable", success, IDEMPOTENCY_TTL_MS);
     }
 
     await record(storage, auth.keyHash, {
       messageType,
-      status: "ok",
+      // pz_log's vocabulary, shared with the legacy pipeline, so "what is our
+      // Not Core rate this week" is one query over both routes. This was "ok",
+      // which is not a member of that vocabulary and failed the CHECK.
+      status: trace.bodySource === "generic_fallback" ? "template_only" : "personalized",
       icp: cls.label,
       trace,
       handlerMs: Date.now() - handlerStarted,

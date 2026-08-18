@@ -246,7 +246,7 @@ export default async function Home() {
               <li>Claim verification in code, one corrective retry, honest downgrade</li>
               <li>Shared investor / city / stage / repeat-founder ties</li>
               <li>Exa recency + career history, with a strict identity gate</li>
-              <li>Supabase cache (30d Fundable / 3d Exa) + request log with 90-day retention</li>
+              <li>Neon cache (30d Fundable / 3d Exa) + request log with 90-day retention</li>
               <li>Bearer auth, per-key rate limit, internal-identity guard</li>
               <li>64 offline tests</li>
             </ul>

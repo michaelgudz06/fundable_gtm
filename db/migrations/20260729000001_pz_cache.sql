@@ -1,8 +1,10 @@
 -- pz_cache — per-person enrichment cache for the Personalization API.
 --
--- Prefixed pz_ because this lives in an EXISTING Supabase project alongside
--- unrelated tables (the free-tier project cap is real). Nothing here is
--- namespaced by schema, so the prefix is the namespace.
+-- Prefixed pz_ because the prefix is now the pair: pz_cache and pz_log are a
+-- matched set, and every reference to them in the code, the scripts and the
+-- docs uses that name. It originally namespaced these tables inside a shared
+-- Supabase project; that project is gone and this database is dedicated, but
+-- renaming would churn a dozen files to save nothing.
 --
 -- Why one row per (key, source) instead of one row per person:
 -- the two halves of an enrichment expire on different clocks. Funding facts
@@ -46,14 +48,19 @@ create index if not exists pz_cache_expires_idx
 -- ---------------------------------------------------------------------------
 -- Access control
 -- ---------------------------------------------------------------------------
--- RLS on with NO policies = deny all for anon and authenticated. The API talks
--- to this table with the secret (service) key, which bypasses RLS. The
--- publishable key must never be able to read enrichment payloads, because they
--- contain data about real people.
-
-alter table public.pz_cache enable row level security;
-
-revoke all on public.pz_cache from anon, authenticated;
+-- There is no in-database access control here, deliberately.
+--
+-- Under Supabase this table had RLS enabled with no policies, to deny the anon
+-- and authenticated roles — roles that existed because a publishable key was
+-- handed to browsers. Neon has neither. The only principal is the owner role in
+-- DATABASE_URL, and RLS does not apply to a table's owner, so enabling it would
+-- be decoration.
+--
+-- The control that replaced it: DATABASE_URL is server-side only. It is never
+-- sent to a browser, and the demo UI's key field rejects anything starting
+-- postgres:// or postgresql:// so it cannot be pasted in by mistake. These
+-- payloads describe real people — if that string leaks, rotate it in the Neon
+-- dashboard, because nothing below this line will stop the reader.
 
 -- ---------------------------------------------------------------------------
 -- Purge

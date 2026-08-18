@@ -273,7 +273,7 @@ otherwise
           <tbody>
             <tr>
               <td>Demo says it recognised a different key</td>
-              <td>The gate wants <code>PERSONALIZE_API_KEY</code>, not the Fundable, OpenRouter or Supabase key — the server holds those itself.</td>
+              <td>The gate wants <code>PERSONALIZE_API_KEY</code>, not the Fundable, OpenRouter or database key — the server holds those itself.</td>
             </tr>
             <tr><td><code>401</code></td><td>Missing or wrong bearer token.</td></tr>
             <tr><td><code>503</code></td><td>No API key configured server-side. It fails closed rather than running open.</td></tr>

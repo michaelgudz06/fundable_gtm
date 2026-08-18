@@ -21,34 +21,9 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { ROOT, loadEnv, arg, mapLimit } from "./lib.js";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-
-function loadEnv(): Record<string, string> {
-  const out: Record<string, string> = {};
-  try {
-    for (const line of readFileSync(join(ROOT, ".env"), "utf8").split("\n")) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-      if (m?.[1] && m[2] !== undefined) out[m[1]] = m[2].replace(/^["']|["']$/g, "");
-    }
-  } catch {
-    /* environment only */
-  }
-  return { ...out, ...process.env } as Record<string, string>;
-}
 const env = loadEnv();
-const arg = (n: string, d?: string) => {
-  const i = process.argv.indexOf(`--${n}`);
-  if (i < 0) return d;
-  const v = process.argv[i + 1];
-  // A flag used as a bare switch (`--approve`) has no value after it, and
-  // returning undefined there is how `--approve` came to crash with an opaque
-  // EISDIR: resolve(undefined ?? "") is the CWD, and readFileSync on a
-  // directory throws. Fall back to the default instead. The `--` guard stops
-  // the next FLAG being eaten as this one's value.
-  return v !== undefined && !v.startsWith("--") ? v : d;
-};
 const BASE = (arg("base", "https://personalize-api-umber.vercel.app") ?? "").replace(/\/$/, "");
 const KEY = env.PERSONALIZE_API_KEY ?? "";
 
@@ -109,22 +84,6 @@ async function classify(row: GoldRow): Promise<string | null> {
     }
   }
   return null;
-}
-
-async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {
-  const out = new Array<R>(items.length);
-  let next = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, async () => {
-      for (;;) {
-        const i = next++;
-        const item = items[i];
-        if (item === undefined) return;
-        out[i] = await fn(item);
-      }
-    })
-  );
-  return out;
 }
 
 type PerLabel = { support: number; tp: number; fp: number; fn: number };
