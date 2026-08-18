@@ -1,7 +1,8 @@
 /**
  * POST /api/v1/personalize — the shared decision layer (SPEC-v2).
  *
- * Success body is EXACTLY { icp, icp_use_cases, email_body } (API-003). Version
+ * Success body is EXACTLY { full_name, email, linkedin_url, icp, icp_use_cases,
+ * email_body } (API-003). Version
  * headers carry every operative registry so a bad answer is traceable to the
  * data that produced it. Errors never include partial business output.
  *
@@ -23,6 +24,20 @@ import { MESSAGE_TYPES, REGISTRY_VERSIONS, getTemplate, type MessageType } from 
 export const runtime = "nodejs";
 
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
+/**
+ * Bump when the success body's KEY SET changes.
+ *
+ * The registry fingerprint namespaces the cache against data changes, but the
+ * response shape is a code change and moves independently. When this body went
+ * from three keys to six, replays kept serving three-key bodies out of the old
+ * deploy's cache for a full TTL — a caller reading full_name got null with a
+ * 200 and no warning. Caught live on 2026-08-18; this constant is what stops
+ * the next shape change repeating it.
+ */
+const IDEMPOTENCY_SHAPE = "v2-six-key";
+
+const idemCacheKey = (key: string): string =>
+  `idem:${IDEMPOTENCY_SHAPE}:${registryFingerprint()}:${key}`;
 
 function versionHeaders(servedModel?: string): Record<string, string> {
   return {
@@ -243,9 +258,14 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
   const storage = getStorage();
   const idemKey = req.headers.get("idempotency-key")?.trim();
   if (idemKey) {
-    const cached = (await storage.cacheGet(`idem:${registryFingerprint()}:${idemKey}`, "fundable")) as Record<string, unknown> | null;
+    const cached = (await storage.cacheGet(idemCacheKey(idemKey), "fundable")) as Record<string, unknown> | null;
     if (cached) {
+      // Whitelisted rather than returned as-is: a replay must not be able to
+      // surface a key the live contract does not promise.
       const canonical = {
+        full_name: cached.full_name,
+        email: cached.email,
+        linkedin_url: cached.linkedin_url ?? null,
         icp: cached.icp,
         icp_use_cases: cached.icp_use_cases,
         email_body: cached.email_body,
@@ -288,7 +308,7 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
 
     const { success } = decision;
     if (idemKey) {
-      await storage.cacheSet(`idem:${registryFingerprint()}:${idemKey}`, "fundable", success, IDEMPOTENCY_TTL_MS);
+      await storage.cacheSet(idemCacheKey(idemKey), "fundable", success, IDEMPOTENCY_TTL_MS);
     }
 
     await record(storage, auth.keyHash, {

@@ -70,6 +70,9 @@ function expectVersionHeaders(r: Res): string[] {
   return need.filter((h) => !r.headers[h]).map((h) => `missing header ${h}`);
 }
 
+/** Both names are mandatory as of 2026-08-16: a case written to prove a LATER
+ *  gate has to clear this one first, or it silently proves the name gate. */
+const NAMES = { first_name: "Sam", last_name: "Rivera" };
 const VISITOR = { message_type: "website_visitor", template_id: "website_visitor_use_case" };
 
 const CASES: Case[] = [
@@ -134,7 +137,12 @@ const CASES: Case[] = [
     name: "unknown template_id is a 422",
     why: "a typo'd template must not silently fall back to something else",
     run: async () => {
-      const r = await post({ email: "a@example.com", message_type: "website_visitor", template_id: "no_such_template" });
+      const r = await post({
+        email: "a@example.com",
+        message_type: "website_visitor",
+        template_id: "no_such_template",
+        known_fields: NAMES,
+      });
       return [...expectStatus(r, 422), ...expectCode(r, "UNKNOWN_TEMPLATE")];
     },
   },
@@ -142,7 +150,12 @@ const CASES: Case[] = [
     name: "template used with the wrong message_type is a 422",
     why: "a cold-outbound frame must not go out as a visitor email",
     run: async () => {
-      const r = await post({ email: "a@example.com", message_type: "website_visitor", template_id: "cold_outbound_cre_daily_raise" });
+      const r = await post({
+        email: "a@example.com",
+        message_type: "website_visitor",
+        template_id: "cold_outbound_cre_daily_raise",
+        known_fields: NAMES,
+      });
       return [...expectStatus(r, 422), ...expectCode(r, "TEMPLATE_MESSAGE_TYPE_CONFLICT")];
     },
   },
@@ -186,7 +199,6 @@ const CASES: Case[] = [
       const r = await post({
         email: "a@example.com",
         ...VISITOR,
-        email_template: undefined,
         known_fields: {},
       });
       return [...expectStatus(r, 400), ...expectCode(r, "INVALID_REQUEST")];
@@ -211,6 +223,7 @@ const CASES: Case[] = [
       });
       return [...expectStatus(r, 400), ...expectCode(r, "INVALID_REQUEST")];
     },
+  },
   {
     name: "a caller's own numbers pass through unaudited (documented limit)",
     why: "approved_claims is fail-closed for CATALOG copy only; a caller's template is their own words, so the registry is not a guarantee about text they wrote",
@@ -253,7 +266,7 @@ const CASES: Case[] = [
     },
   },
   {
-    name: "success body has exactly three keys",
+    name: "success body has exactly the six promised keys",
     why: "API-003; anything extra becomes a field someone depends on",
     costly: true,
     run: async () => {
