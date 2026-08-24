@@ -236,6 +236,10 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
     return err(400, "INVALID_REQUEST", `\`stop_at\` must be one of: ${STOP_AT.join(", ")}.`);
   }
   const stopAt: StopAt = (body.stop_at as StopAt) ?? "email";
+  // Recorded as soon as it is known so every response after this point — the
+  // idempotent replay included — reports the mode the caller ASKED for. The
+  // replay used to say X-Stop-At: email on an icp replay (QA finding).
+  trace.stopAt = stopAt;
   const composing = stopAt === "email";
 
   // message_type and the template pair drive composition only. Demanding them
