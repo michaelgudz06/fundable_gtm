@@ -55,7 +55,7 @@ type Body = {
 };
 
 export async function POST(req: Request): Promise<Response> {
-  const gate = gateRequest(req);
+  const gate = await gateRequest(req);
   if (!gate.ok) return gate.response;
 
   let body: Body;

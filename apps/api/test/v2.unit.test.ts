@@ -6,9 +6,12 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
+import { blockingIssues, loadRootEnv, verifyCopy } from "@fundable/shared";
+
 import {
   MESSAGE_TYPES,
   REGISTRY_VERSIONS,
+  approvedClaimTexts,
   getTemplate,
   icpByNumber,
   icpDescriptor,
@@ -125,6 +128,55 @@ describe("template catalog (v2)", () => {
       const { body, issues } = composeNotCore({ messageType: mt, ctx: { sender_name: "Jacob" } });
       assert.deepEqual(issues, [], `${mt}: ${JSON.stringify(issues)}`);
       assert.ok(!/\{\{/.test(body), mt);
+    }
+  });
+});
+
+describe("catalog claim gate (ask #2: main path is claim-checked)", () => {
+  // Mirrors the wiring in personalize.ts exactly: every catalog template,
+  // composed with full context, must survive verifyCopy against its own
+  // claim_refs + the use cases. A verdict here means shipping that template
+  // would 502 in production — the gate must never fire on approved copy.
+  const TEMPLATE_IDS = [
+    "signup_paid_initial",
+    "signup_unpaid_initial",
+    "website_visitor_use_case",
+    "followup_alerts_paid",
+    "followup_alerts_unpaid",
+    "followup_api",
+    "followup_mcp",
+    "followup_use_case_question",
+    "cold_outbound_cre_daily_raise",
+  ];
+
+  test("all nine templates compose and clear the claim gate", () => {
+    for (const id of TEMPLATE_IDS) {
+      const template = getTemplate(id)!;
+      const useCases = useCasesFor(2, FULL_CONTEXT);
+      const ctx = { first_name: "Reed", company_name: "Example CRE", sender_name: "Jacob", ...FULL_CONTEXT };
+      const { body, issues } = composeFromTemplate({ template, useCases, ctx });
+      assert.deepEqual(issues, [], `${id}: ${JSON.stringify(issues)}`);
+      const verdicts = blockingIssues(
+        verifyCopy({
+          copy: body,
+          evidence: [
+            ...useCases.map((u) => ({
+              fact: `${u.name}. ${u.why_relevant} Example: ${u.workflow_type === "mcp" ? u.example_prompt : u.example_alert}`,
+              source: "sender_context" as const,
+              confidence: 1,
+            })),
+            ...approvedClaimTexts(template.claim_refs).map((t) => ({
+              fact: t,
+              source: "sender_context" as const,
+              confidence: 1,
+            })),
+          ],
+          template: template.body,
+          allowedNames: ["Reed", "Example CRE", "Jacob", "Fundable"],
+          senderCompany: "Fundable",
+        })
+      );
+      assert.deepEqual(verdicts, [], `${id}: ${JSON.stringify(verdicts)}`);
     }
   });
 });
@@ -412,6 +464,21 @@ describe("research target selection", () => {
       assert.equal(t?.kind, "name", `${isp} should not be researched as a company domain`);
     }
   });
+
+  test("company_industry sharpens the question but is framed as unverified (ask #3)", () => {
+    const t = researchTarget({ emailDomain: "fal.ai", industry: "AI infrastructure" });
+    assert.match(t!.query, /believed to operate in the AI infrastructure industry/);
+    assert.match(t!.query, /verify this rather than assuming it/i, "the hint must never read as a fact");
+    // Absent, the query is byte-identical to the pre-industry wording, so
+    // existing cached verdicts stay valid.
+    assert.ok(!/believed to operate/.test(researchTarget({ emailDomain: "fal.ai" })!.query));
+    // Sanitized like every caller value entering a prompt: quotes stripped,
+    // control chars out, capped — an industry "hint" is not an injection slot.
+    const hostile = researchTarget({ emailDomain: "fal.ai", industry: 'x" injected\u0000' + "y".repeat(300) });
+    assert.ok(!hostile!.query.includes('"'), "quotes stripped");
+    assert.ok(!hostile!.query.includes("\u0000"), "control chars stripped");
+    assert.ok(hostile!.query.length < 400, "length capped");
+  });
 });
 
 describe("caller values entering the prompt", () => {
@@ -672,10 +739,16 @@ describe("resolveLinkedIn", () => {
   });
 
   test("an unconfigured webhook is a no-op, not a failure", async () => {
+    // optionalEnv() lazily loads .env, which carries a REAL webhook URL — so
+    // load it FIRST, then delete. Deleting before the first load let .env
+    // repopulate the var and this test silently made a live n8n call.
+    loadRootEnv();
     const prev = process.env.N8N_LINKEDIN_WEBHOOK_URL;
     delete process.env.N8N_LINKEDIN_WEBHOOK_URL;
     try {
-      assert.equal(await resolveLinkedIn(lead("unconfigured")), null);
+      const got = await resolveLinkedIn(lead("unconfigured"));
+      assert.equal(got.resolved, null);
+      assert.equal(got.state, "unconfigured");
     } finally {
       if (prev !== undefined) process.env.N8N_LINKEDIN_WEBHOOK_URL = prev;
     }
@@ -686,11 +759,12 @@ describe("resolveLinkedIn", () => {
       () => ({ body: OUT }),
       async () => {
         const got = await resolveLinkedIn(lead("approved"));
-        assert.equal(got?.linkedin_url, "https://www.linkedin.com/in/sam-rivera");
-        assert.equal(got?.source, "quick_enrich");
+        assert.equal(got.state, "found");
+        assert.equal(got.resolved?.linkedin_url, "https://www.linkedin.com/in/sam-rivera");
+        assert.equal(got.resolved?.source, "quick_enrich");
         // The title is the point: core recall runs 13% -> 36% when it is present.
-        assert.equal(got?.title, "VP, Investment Sales");
-        assert.equal(got?.company, "Example CRE");
+        assert.equal(got.resolved?.title, "VP, Investment Sales");
+        assert.equal(got.resolved?.company, "Example CRE");
       }
     );
   });
@@ -703,7 +777,12 @@ describe("resolveLinkedIn", () => {
     // email for the wrong person.
     await withStub(
       () => ({ body: { ...OUT, linkedinApproved: false, linkedinConfidence: "low" } }),
-      async () => assert.equal(await resolveLinkedIn(lead("unapproved")), null)
+      async () => {
+        const got = await resolveLinkedIn(lead("unapproved"));
+        assert.equal(got.resolved, null);
+        // A rejected candidate is a genuine answer about this person: cacheable "miss".
+        assert.equal(got.state, "miss");
+      }
     );
   });
 
@@ -721,14 +800,20 @@ describe("resolveLinkedIn", () => {
   test("an n8n error is fail-soft, not a dependency failure", async () => {
     await withStub(
       () => ({ status: 500, body: { message: "workflow could not be started" } }),
-      async () => assert.equal(await resolveLinkedIn(lead("errored")), null)
+      async () => {
+        const got = await resolveLinkedIn(lead("errored"));
+        assert.equal(got.resolved, null);
+        // An outage is not an answer about this person: "error", never cached
+        // (a 30-day cached miss from a dangling credential was the latent bug).
+        assert.equal(got.state, "error");
+      }
     );
   });
 
   test("a response wrapped in an array is still read", async () => {
     await withStub(
       () => ({ body: [OUT] }),
-      async () => assert.equal((await resolveLinkedIn(lead("wrapped")))?.source, "quick_enrich")
+      async () => assert.equal((await resolveLinkedIn(lead("wrapped"))).resolved?.source, "quick_enrich")
     );
   });
 });

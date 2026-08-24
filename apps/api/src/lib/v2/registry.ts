@@ -1,8 +1,8 @@
 /**
  * Versioned registries per SPEC-v2 §5 data ownership.
  *
- * Statically imported so the bundler ships them (same serverless lesson as
- * config-registry.ts), validated at module load so a malformed registry fails
+ * Statically imported so the bundler ships them (a file read at request time
+ * is not in the serverless bundle), validated at module load so a malformed registry fails
  * the build rather than a request. Every response carries these versions in
  * headers, so a bad classification can be pinned to the registry that made it.
  */

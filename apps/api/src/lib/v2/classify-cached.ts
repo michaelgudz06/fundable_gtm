@@ -50,12 +50,17 @@ function classificationKey(input: {
   title?: string | undefined;
   company?: string | undefined;
   companyDomain?: string | undefined;
+  industry?: string | undefined;
 }): string {
   const material = [
     normalizeEmail(input.email),
     (input.title ?? "").trim().toLowerCase(),
     (input.company ?? "").trim().toLowerCase(),
     (input.companyDomain ?? "").trim().toLowerCase(),
+    // Joined only when present: industry steers the research question, so it
+    // must key the verdict — but requests without it must keep hitting the
+    // cache entries written before the field existed.
+    ...((input.industry ?? "").trim() ? [(input.industry ?? "").trim().toLowerCase()] : []),
   ].join("|");
   const digest = createHash("sha256").update(material).digest("hex").slice(0, 32);
   return `cls:${registryFingerprint()}:${CLASSIFIER_DECISION_VERSION}:${digest}`;
@@ -78,6 +83,7 @@ export async function classifyCached(
     title?: string | undefined;
     company?: string | undefined;
     companyDomain?: string | undefined;
+    industry?: string | undefined;
     researchTask?: ResearchTask | undefined;
     deadlineAt?: number | undefined;
   },

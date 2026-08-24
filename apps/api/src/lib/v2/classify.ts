@@ -183,18 +183,21 @@ export function researchTarget(input: {
   emailDomain: string;
   companyDomain?: string | undefined;
   company?: string | undefined;
+  /** Research targeting ONLY (Jacob's ask #3): sharpens the Exa question,
+   *  never reaches the classifier as evidence. */
+  industry?: string | undefined;
 }): ResearchTarget | null {
   const corporateEmail = !isFreemail(input.emailDomain) && input.emailDomain !== "";
   if (corporateEmail) {
-    return { kind: "domain", value: input.emailDomain, query: companyResearchQuery(input.emailDomain) };
+    return { kind: "domain", value: input.emailDomain, query: companyResearchQuery(input.emailDomain, input.industry) };
   }
   const cd = input.companyDomain?.trim().toLowerCase();
   if (cd && !isFreemail(cd)) {
-    return { kind: "domain", value: cd, query: companyResearchQuery(cd) };
+    return { kind: "domain", value: cd, query: companyResearchQuery(cd, input.industry) };
   }
   const name = input.company?.trim();
   if (name) {
-    return { kind: "name", value: name, query: companyResearchQueryByName(name) };
+    return { kind: "name", value: name, query: companyResearchQueryByName(name, input.industry) };
   }
   return null;
 }
@@ -206,6 +209,8 @@ export async function classifyV2(
     company?: string | undefined;
     /** Caller-known employer domain; used only when the address is personal. */
     companyDomain?: string | undefined;
+    /** Caller's industry hint — research targeting only, never evidence. */
+    industry?: string | undefined;
     research?: string | undefined;
     /** Research started before this call, used only if it matches the target. */
     researchTask?: ResearchTask | undefined;
@@ -243,6 +248,7 @@ export async function classifyV2(
     emailDomain: domain,
     companyDomain: input.companyDomain,
     company: input.company,
+    industry: input.industry,
   });
   if (!research && target) {
     const t0 = Date.now();

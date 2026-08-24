@@ -52,6 +52,13 @@ export interface Storage {
   cacheGet(key: string, source: CacheSource): Promise<unknown | null>;
   cacheSet(key: string, source: CacheSource, payload: unknown, ttlMs: number): Promise<void>;
   log(row: LogRow): Promise<void>;
+  /**
+   * How many pz_log rows this key wrote since `sinceMs`, and the oldest such
+   * row's timestamp — the durable half of the rate limit (auth.ts). Null means
+   * "can't say" (no DATABASE_URL, or the query failed); the caller falls back
+   * to its in-memory window rather than failing the request over telemetry.
+   */
+  countLogSince(apiKeyHash: string, sinceMs: number): Promise<{ n: number; oldestMs: number } | null>;
   /** Most recent storage failure this request, for surfacing as a warning. */
   readonly lastError: string | null;
 }
@@ -63,6 +70,9 @@ class NoopStorage implements Storage {
   }
   async cacheSet() {}
   async log() {}
+  async countLogSince() {
+    return null;
+  }
 }
 
 class NeonStorage implements Storage {
@@ -170,6 +180,25 @@ class NeonStorage implements Storage {
       );
     } catch (err) {
       this.note("log", err);
+    }
+  }
+
+  async countLogSince(apiKeyHash: string, sinceMs: number): Promise<{ n: number; oldestMs: number } | null> {
+    try {
+      const sql = this.sql();
+      const since = new Date(sinceMs).toISOString();
+      // Served by pz_log_key_window_idx (api_key_hash, created_at desc).
+      const rows = (await sql`
+        select count(*)::int as n, min(created_at) as oldest
+          from public.pz_log
+         where api_key_hash = ${apiKeyHash} and created_at > ${since}
+      `) as { n: number; oldest: string | null }[];
+      const row = rows[0];
+      if (!row) return null;
+      return { n: row.n, oldestMs: row.oldest ? new Date(row.oldest).getTime() : sinceMs };
+    } catch (err) {
+      this.note("countLogSince", err);
+      return null;
     }
   }
 }

@@ -62,6 +62,31 @@ describe("v1/personalize HTTP gates (offline)", () => {
     assert.equal(res.headers.get("X-Body-Source"), "none");
   });
 
+  test("PERSONALIZE_API_KEY is comma-separated: every listed key authenticates", async () => {
+    process.env.PERSONALIZE_API_KEY = `other-key-1, ${KEY} ,other-key-2`;
+    // The configured KEY still works (post() sends it)...
+    const ok = await post("{not json");
+    assert.equal(ok.status, 400, "authenticated: failed on JSON, not auth");
+    // ...and so does a sibling key from the same list.
+    const sibling = await POST(
+      new Request("http://localhost/api/v1/personalize", {
+        method: "POST",
+        headers: { Authorization: "Bearer other-key-2" },
+        body: "{not json",
+      })
+    );
+    assert.equal(sibling.status, 400);
+    // A key on no list is still a 401.
+    const bad = await POST(
+      new Request("http://localhost/api/v1/personalize", {
+        method: "POST",
+        headers: { Authorization: "Bearer other-key-3" },
+        body: "{}",
+      })
+    );
+    assert.equal(bad.status, 401);
+  });
+
   test("400 INVALID_JSON on an unparseable body", async () => {
     const res = await post("{not json");
     assert.equal(res.status, 400);

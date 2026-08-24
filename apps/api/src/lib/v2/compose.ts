@@ -124,8 +124,11 @@ function resolveVariables(body: string, ctx: ComposeContext, useCase: UseCase | 
     primary_use_case_clause: !useCase
       ? "a deal alert matched to the companies you care about"
       : useCase.workflow_type === "mcp"
-        ? `${proseCase(useCase.name)} — for example: "${unterminatedQuoted(useCase.example_prompt)}"`
-        : `${proseCase(useCase.name)} — for example: ${unterminated(useCase.example_alert)}`,
+        // Comma, not an em dash: the voice profile forbids em dashes, and this
+        // connective is the one place the COMPOSER (not approved template text)
+        // was introducing one — the claim gate caught it.
+        ? `${proseCase(useCase.name)}, for example: "${unterminatedQuoted(useCase.example_prompt)}"`
+        : `${proseCase(useCase.name)}, for example: ${unterminated(useCase.example_alert)}`,
   };
 
   let out = body;

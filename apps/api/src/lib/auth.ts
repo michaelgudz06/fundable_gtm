@@ -1,18 +1,28 @@
 /**
- * v1 auth: one static bearer key, Fundable-internal (spec §1.3).
+ * v1 auth: static bearer keys, Fundable-internal (spec §1.3).
  *
- * Fails CLOSED: if PERSONALIZE_API_KEY is unset the endpoint returns 503 rather
- * than running open. Comparison is constant-time over sha256 digests so key
- * length never leaks through timing.
+ * PERSONALIZE_API_KEY holds one or more keys, comma-separated — one per caller
+ * (Michael, Jacob), so a key can be revoked without rotating everyone. Fails
+ * CLOSED: if the var is unset the endpoint returns 503 rather than running
+ * open. Comparison is constant-time over sha256 digests so key length never
+ * leaks through timing.
  *
- * The rate limit is an in-memory sliding window — honest about its limits: it
- * resets on redeploy and is per-instance. Fine for a single-instance internal
- * tool; the durable per-key version (counting pz_log rows) is M5.
+ * The rate limit is two layers, per key:
+ *   1. Durable: count this key's pz_log rows in the last hour (Neon). Survives
+ *      redeploys and spans lambda instances — this is the layer that actually
+ *      protects spend. It counts handled requests, so a burst can overshoot by
+ *      at most the in-flight concurrency.
+ *   2. In-memory sliding window: per-instance, resets on redeploy. Catches
+ *      what the durable layer can't see — requests that never reach record()
+ *      (errors), and everything when the DB is unreachable (fail-open there,
+ *      because storage being down must not take the API with it).
  */
 
 import { createHash, timingSafeEqual } from "node:crypto";
 
 import { optionalEnv } from "@fundable/shared";
+
+import { getStorage } from "./storage";
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -23,8 +33,11 @@ export type AuthResult =
   | { ok: false; status: 401 | 503; message: string };
 
 export function checkAuth(req: Request): AuthResult {
-  const expected = optionalEnv("PERSONALIZE_API_KEY");
-  if (!expected) {
+  const configured = (optionalEnv("PERSONALIZE_API_KEY") ?? "")
+    .split(",")
+    .map((k) => k.trim())
+    .filter(Boolean);
+  if (!configured.length) {
     return {
       ok: false,
       status: 503,
@@ -38,9 +51,15 @@ export function checkAuth(req: Request): AuthResult {
     return { ok: false, status: 401, message: "Missing bearer token." };
   }
 
+  // Every configured key is compared — no early exit — so which key matched
+  // (or how many keys exist) never shows through timing.
   const presented = createHash("sha256").update(match[1]).digest();
-  const wanted = createHash("sha256").update(expected).digest();
-  if (!timingSafeEqual(presented, wanted)) {
+  let matched = false;
+  for (const key of configured) {
+    const wanted = createHash("sha256").update(key).digest();
+    if (timingSafeEqual(presented, wanted)) matched = true;
+  }
+  if (!matched) {
     return { ok: false, status: 401, message: "Invalid bearer token." };
   }
 
@@ -55,11 +74,21 @@ const HOUR_MS = 60 * 60 * 1000;
 
 export type RateResult = { ok: true } | { ok: false; retryAfterS: number };
 
-export function checkRateLimit(keyHash: string): RateResult {
+export async function checkRateLimit(keyHash: string): Promise<RateResult> {
   const limit = Number(optionalEnv("PERSONALIZE_RATE_LIMIT_PER_HOUR") ?? 60);
   if (!Number.isFinite(limit) || limit <= 0) return { ok: true };
 
   const now = Date.now();
+
+  // Layer 1: durable, cross-instance. Null (no DB, query failed) falls through
+  // to layer 2 — the request must not fail because telemetry is unreachable.
+  const durable = await getStorage().countLogSince(keyHash, now - HOUR_MS);
+  if (durable && durable.n >= limit) {
+    return { ok: false, retryAfterS: Math.max(1, Math.ceil((durable.oldestMs + HOUR_MS - now) / 1000)) };
+  }
+
+  // Layer 2: in-memory, per-instance. Counts every gated attempt, including
+  // ones the log never sees.
   const hits = (WINDOWS.get(keyHash) ?? []).filter((t) => now - t < HOUR_MS);
 
   if (hits.length >= limit) {
@@ -85,7 +114,9 @@ export function jsonError(status: number, code: string, message: string, details
  * Auth + rate limit in one step — the preamble every route runs before reading
  * the body. On failure the caller returns `response` as-is.
  */
-export function gateRequest(req: Request): { ok: true; keyHash: string } | { ok: false; response: Response } {
+export async function gateRequest(
+  req: Request
+): Promise<{ ok: true; keyHash: string } | { ok: false; response: Response }> {
   const auth = checkAuth(req);
   if (!auth.ok) {
     return {
@@ -93,7 +124,7 @@ export function gateRequest(req: Request): { ok: true; keyHash: string } | { ok:
       response: jsonError(auth.status, auth.status === 401 ? "UNAUTHORIZED" : "NOT_CONFIGURED", auth.message),
     };
   }
-  const rate = checkRateLimit(auth.keyHash);
+  const rate = await checkRateLimit(auth.keyHash);
   if (!rate.ok) {
     return {
       ok: false,

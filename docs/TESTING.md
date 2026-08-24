@@ -289,13 +289,13 @@ curl -s -X POST "$B/api/v1/personalize" -H "authorization: Bearer $K" \
 Expect **422 `UNSUPPORTED_CLAIM`** — that guarantee is not in
 `config/registry/approved_claims.json`.
 
-Wiring the same two checks onto the catalog branch is ~10 lines; the imports
-are already at the top of `apps/api/src/lib/v2/personalize.ts`. The full
-LLM review-and-retry loop (`apps/api/src/lib/pipeline/write.ts:178-284`) is
-deliberately **not** wired in: v2 does not generate prose, it substitutes
-variables into human-approved templates, so an LLM reviewer there is reviewing
-text a human already signed off — latency against a 13.5s budget for no signal.
-Wire it if and when v2 starts writing freely.
+The catalog branch now runs the same claim gate (2026-08-23): a catalog
+template producing an unapproved claim fails **502** (our defect, not the
+caller's). An LLM review-and-retry loop is deliberately **not** wired in: v2
+does not generate prose, it substitutes variables into human-approved
+templates, so an LLM reviewer would be reviewing text a human already signed
+off — latency against a 13.5s budget for no signal. Wire it if and when v2
+starts writing freely (the legacy pipeline that had one was deleted 2026-08-23).
 
 ---
 

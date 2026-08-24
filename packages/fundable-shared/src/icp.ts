@@ -76,8 +76,33 @@ export function isFreemail(domain: string): boolean {
  */
 export const RESEARCH_QUERY_VERSION = "2";
 
-export function companyResearchQuery(domain: string): string {
-  return `What is the company at domain ${domain}? Describe its industry and what it does, what it sells and to whom (its typical customers), and its approximate size in employees.`;
+/**
+ * Caller-supplied text entering a search query: control characters out, quotes
+ * stripped (they delimit the phrase in the query, so one inside would close the
+ * delimiter early), whitespace collapsed, length capped.
+ */
+function sanitizeQueryText(text: string, max: number): string {
+  return text
+    .replace(/[\p{Cc}\p{Cf}]/gu, " ")
+    .replace(/["'`“”‘’]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
+}
+
+/**
+ * `industry` is the caller's `company_industry` hint (Jacob's ask #3). It
+ * steers WHERE research looks — nothing more. It is never presented to the
+ * classifier as a fact: a caller-controlled field must not be able to talk a
+ * lead into an ICP, so it may sharpen the question but never answer it.
+ */
+function industryClause(industry?: string): string {
+  const clean = industry ? sanitizeQueryText(industry, 80) : "";
+  return clean ? ` The company is believed to operate in the ${clean} industry; verify this rather than assuming it.` : "";
+}
+
+export function companyResearchQuery(domain: string, industry?: string): string {
+  return `What is the company at domain ${domain}? Describe its industry and what it does, what it sells and to whom (its typical customers), and its approximate size in employees.${industryClause(industry)}`;
 }
 
 /**
@@ -89,15 +114,7 @@ export function companyResearchQuery(domain: string): string {
  * The name is quoted and length-capped: it is caller-supplied text entering a
  * search query, and a "company name" of two paragraphs is not a company name.
  */
-export function companyResearchQueryByName(name: string): string {
-  // Quotes are stripped, not escaped: the name is delimited by quotes in the
-  // query, so a name containing one would otherwise close the delimiter early
-  // and the remainder would read as part of our question.
-  const clean = name
-    .replace(/[\p{Cc}\p{Cf}]/gu, " ")
-    .replace(/["'`“”‘’]/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 120);
-  return `What does the company "${clean}" do, and does it primarily sell to startups or venture-backed companies? Is it a small company or a large enterprise? If several companies share this name, describe the most likely one and say that the match is uncertain.`;
+export function companyResearchQueryByName(name: string, industry?: string): string {
+  const clean = sanitizeQueryText(name, 120);
+  return `What does the company "${clean}" do, and does it primarily sell to startups or venture-backed companies? Is it a small company or a large enterprise?${industryClause(industry)} If several companies share this name, describe the most likely one and say that the match is uncertain.`;
 }

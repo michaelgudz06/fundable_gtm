@@ -78,6 +78,15 @@ function harvest(out: WorkflowOutput): { title?: string; company?: string } {
 }
 
 /**
+ * Why the result carries a `state`: null used to mean four different things —
+ * cascade missed, n8n unconfigured, n8n down, judge rejected — and a caller
+ * reading the response could not tell "this person isn't findable" from "the
+ * integration is broken". The URL is still null in all of them; the state is
+ * what makes the difference loud (it lands on X-Linkedin-Source).
+ */
+export type ResolveState = "found" | "miss" | "unconfigured" | "error";
+
+/**
  * @param location the PERSON's location ("Vancouver, BC"), not a sales
  * territory. The workflow's Gemini judge uses it to tell two people with the
  * same name apart — its stated rule 2 — so omitting it makes a rejection more
@@ -89,20 +98,23 @@ export async function resolveLinkedIn(args: {
   lastName: string;
   location?: string | undefined;
   deadlineAt?: number | undefined;
-}): Promise<ResolvedLinkedIn | null> {
+}): Promise<{ resolved: ResolvedLinkedIn | null; state: ResolveState }> {
   const url = optionalEnv("N8N_LINKEDIN_WEBHOOK_URL");
   // Unconfigured is a supported state, not an error: both live flows (website
   // visitors, n8n sign-ups) already arrive carrying a LinkedIn URL.
-  if (!url) return null;
+  if (!url) return { resolved: null, state: "unconfigured" };
 
   const storage = getStorage();
   // Keyed on the name too: the same mailbox asserted under a different name is a
   // different question, and the workflow matches on name.
   const key = `linkedin-resolve:${args.email.toLowerCase()}:${`${args.firstName} ${args.lastName}`.trim().toLowerCase()}`;
   const hit = (await storage.cacheGet(key, "fundable")) as { resolved: ResolvedLinkedIn | null } | null;
-  if (hit && typeof hit === "object" && "resolved" in hit) return hit.resolved;
+  if (hit && typeof hit === "object" && "resolved" in hit) {
+    return { resolved: hit.resolved, state: hit.resolved ? "found" : "miss" };
+  }
 
   let resolved: ResolvedLinkedIn | null = null;
+  let state: ResolveState = "miss";
   try {
     const token = optionalEnv("N8N_LINKEDIN_WEBHOOK_TOKEN");
     const res = await fetchWithDeadline(
@@ -135,15 +147,20 @@ export async function resolveLinkedIn(args: {
           confidence: str(out.linkedinConfidence) || "unknown",
           ...harvest(out),
         };
+        state = "found";
       }
+    } else {
+      // n8n answered but not with a verdict — a 4xx/5xx is the integration
+      // misbehaving, not this person being unfindable. Not cached.
+      return { resolved: null, state: "error" };
     }
   } catch {
-    // Timeout, DNS, a 502 from n8n, unparseable JSON. All mean "no profile
-    // today" — never a hard failure, and never a guess. Deliberately not cached:
-    // an outage is not an answer about this person.
-    return null;
+    // Timeout, DNS, unparseable JSON. All mean "no profile today" — never a
+    // hard failure, and never a guess. Deliberately not cached: an outage is
+    // not an answer about this person.
+    return { resolved: null, state: "error" };
   }
 
   await storage.cacheSet(key, "fundable", { resolved }, RESOLVE_TTL_MS);
-  return resolved;
+  return { resolved, state };
 }

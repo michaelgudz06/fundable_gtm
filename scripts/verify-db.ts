@@ -189,10 +189,14 @@ async function main() {
   if (missing.includes("pz_log")) {
     warn("pz_log absent; skipping");
   } else {
+    // v1-shaped row, deliberately: the legacy CHECK constraints silently
+    // rejected every `channel: "v1/personalize"` write for weeks (record()'s
+    // never-fail-a-send catch ate the error). This probe now proves the fix —
+    // if the relax-checks migration hasn't run, THIS fails, not production.
     const row: LogRow = {
       api_key_hash: stamp,
-      trigger: "post-raise",
-      channel: "email",
+      trigger: "stop_at:email",
+      channel: "v1/personalize",
       person_email: "verify-script@example.invalid",
       person_linkedin: null,
       person_name: null,
@@ -203,7 +207,7 @@ async function main() {
       company_name: null,
       company_domain: "example.invalid",
       person_id: null,
-      status: "template_only",
+      status: "ok",
       confidence: 0.75,
       angle: null,
       subject: null,

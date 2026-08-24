@@ -193,6 +193,12 @@ export async function decide(input: {
     typeof kf.company_domain === "string" && kf.company_domain.trim()
       ? normalizeDomain(kf.company_domain).domain
       : undefined;
+  // Research targeting only (ask #3): sharpens the Exa question, never reaches
+  // the classifier as evidence — a caller-controlled field must not be able to
+  // talk a lead into an ICP.
+  const industry = typeof kf.company_industry === "string" && kf.company_industry.trim()
+    ? kf.company_industry.trim()
+    : undefined;
 
   // Research asks about the company; the identity lookup asks about the
   // person. Neither needs the other's answer when the caller already told us
@@ -200,7 +206,7 @@ export async function decide(input: {
   // 2.6s warm against Fundable /people), so the two are started together.
   let researchDomain = companyDomain;
   const preTarget = title
-    ? researchTarget({ emailDomain, companyDomain: researchDomain, company })
+    ? researchTarget({ emailDomain, companyDomain: researchDomain, company, industry })
     : null; // no title yet: the freemail gate may make research unnecessary
   // Not started for stop_at="linkedin": that mode returns before classification,
   // so the research would be an Exa charge nobody reads and a floating promise
@@ -245,7 +251,7 @@ export async function decide(input: {
     // spending another 8s leg plus a Fundable credit to re-learn a fact we are
     // holding would be the whole latency budget for nothing.
     const tResolve = Date.now();
-    const found = await resolveLinkedIn({ email, firstName, lastName, location, deadlineAt });
+    const { resolved: found, state } = await resolveLinkedIn({ email, firstName, lastName, location, deadlineAt });
     trace.identity = Date.now() - tResolve;
     if (found) {
       linkedin = found.linkedin_url;
@@ -254,6 +260,11 @@ export async function decide(input: {
       // know their lead and the cascade is inferring.
       title = title ?? found.title;
       company = company ?? found.company;
+    } else {
+      // "miss" | "unconfigured" | "error" — reported on X-Linkedin-Source so a
+      // null URL is never ambiguous between "unfindable person" and "broken
+      // integration". Before this, all three looked identical from outside.
+      trace.linkedinSource = state;
     }
   }
 
@@ -267,7 +278,7 @@ export async function decide(input: {
   // identity check; it exists so a lead with a personal address is still
   // researchable instead of failing closed for want of a lookup.
   const cls = await classifyCached(
-    { email, title, company, companyDomain: researchDomain, researchTask, deadlineAt },
+    { email, title, company, companyDomain: researchDomain, industry, researchTask, deadlineAt },
     exa
   );
   trace.classification = cls.cacheState;
@@ -324,6 +335,39 @@ export async function decide(input: {
   } else if (template) {
     const { body: b, issues } = composeFromTemplate({ template, useCases, ctx });
     if (issues.length) return fail(502, "OUTPUT_VALIDATION_FAILED", "Composed body failed validation.", issues);
+
+    // Ask #2: the same claim gate the caller-template branch has always had.
+    // The template text itself is trusted (a human approved it), so passing it
+    // as `template` means only what substitution INTRODUCED can be flagged —
+    // and a verdict here is a 502, not a 422: a catalog template making an
+    // unapproved claim is our defect, not the caller's.
+    const verdicts = blockingIssues(
+      verifyCopy({
+        copy: b,
+        evidence: [
+          ...useCases.map((u) => ({
+            fact: `${u.name}. ${u.why_relevant} Example: ${
+              u.workflow_type === "mcp" ? u.example_prompt : u.example_alert
+            }`,
+            source: "sender_context" as const,
+            confidence: 1,
+          })),
+          ...approvedClaimTexts(template.claim_refs).map((t) => ({
+            fact: t,
+            source: "sender_context" as const,
+            confidence: 1,
+          })),
+        ],
+        template: template.body,
+        allowedNames: [ctx.first_name, ctx.company_name, ctx.sender_name, "Fundable"].filter(
+          (x): x is string => !!x
+        ),
+        senderCompany: "Fundable",
+      })
+    );
+    if (verdicts.length) {
+      return fail(502, "UNSUPPORTED_CLAIM", "Catalog template produced claims outside the approved set.", verdicts);
+    }
     emailBody = b;
     trace.bodySource = "catalog_template";
   } else {

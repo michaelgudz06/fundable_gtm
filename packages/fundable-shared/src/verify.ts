@@ -450,7 +450,10 @@ export function verifyCopy(input: VerifyInput): VerifyIssue[] {
   }
 
   // --- style rules from the voice profile ----------------------------------
-  if (copy.includes("—")) {
+  // Exempt when the template itself carries one: the template is trusted,
+  // human-approved text (six of nine catalog templates use em dashes
+  // deliberately), so this flags only a dash that SUBSTITUTION introduced.
+  if (copy.includes("—") && !(input.template ?? "").includes("—")) {
     issues.push({
       quote: "—",
       reason: "em dash is forbidden in this voice; break the sentence or use a comma or colon",

@@ -77,6 +77,8 @@ type RequestBody = {
     title?: unknown;
     company_name?: unknown;
     company_domain?: unknown;
+    /** Industry hint — steers research targeting only, never classifier evidence. */
+    company_industry?: unknown;
     linkedin_url?: unknown;
     /** The PERSON's location, distinct from additional_context.territory. */
     location?: unknown;
@@ -197,7 +199,7 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
   const handlerStarted = Date.now();
   const auth = checkAuth(req);
   if (!auth.ok) return err(auth.status, auth.status === 401 ? "UNAUTHORIZED" : "NOT_CONFIGURED", auth.message);
-  const rate = checkRateLimit(auth.keyHash);
+  const rate = await checkRateLimit(auth.keyHash);
   if (!rate.ok) {
     return Response.json(
       { error: { code: "RATE_LIMITED", message: `Retry in ${rate.retryAfterS}s.` } },
