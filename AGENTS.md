@@ -29,7 +29,7 @@ serving old answers.
 
 ## Verify loop
 
-- `npm run verify` — typecheck every workspace + 140 offline tests + build.
+- `npm run verify` — typecheck every workspace + 144 offline tests + build.
   Offline, no keys. Must pass before any commit.
 - Gold-set loop (live, spends real credits): mine candidates with
   `npx tsx scripts/build-gold-set.ts --csv <export>`, a **human** approves every

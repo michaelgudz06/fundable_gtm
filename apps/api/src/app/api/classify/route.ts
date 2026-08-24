@@ -34,13 +34,13 @@ import {
   newExaLedger,
   newLedger,
   normalizeEmail,
-  personByLinkedIn,
   startBudget,
 } from "@fundable/shared";
 
 import { gateRequest, jsonError as error } from "../../../lib/auth";
 import { CLASSIFIER_PROMPT_VERSION } from "../../../lib/v2/classify";
 import { classifyCached } from "../../../lib/v2/classify-cached";
+import { personCached } from "../../../lib/v2/personalize";
 import { hubspotLabelFor } from "../../../lib/v2/hubspot";
 import { REGISTRY_VERSIONS } from "../../../lib/v2/registry";
 
@@ -89,12 +89,19 @@ export async function POST(req: Request): Promise<Response> {
   // on the precise path instead of the conservative one.
   if (!title && linkedin) {
     try {
-      const { person, warnings: w } = await personByLinkedIn(linkedin, fundable);
-      warnings.push(...w);
+      // personCached, NOT personByLinkedIn. /people is 19s cold against an 8s
+      // cap, so the raw call threw DeadlineError on the first request for any
+      // uncached person — and the catch below only degrades FundableError, so
+      // it escaped as an unhandled 500 with an empty body. The personalize
+      // route learned this on 2026-08-18; this was the sibling caller left
+      // behind. Sharing personCached also shares its 30-day person cache.
+      const { person, timedOut } = await personCached(linkedin, fundable);
       if (person?.title) {
         title = person.title;
         company = company ?? person.current_company?.name ?? undefined;
         warnings.push(`Title resolved from LinkedIn via Fundable: "${person.title}".`);
+      } else if (timedOut) {
+        warnings.push("LinkedIn resolution timed out; using the email-only path.");
       } else if (person) {
         warnings.push("LinkedIn resolved to a person but no title on record; using the email-only path.");
       } else {

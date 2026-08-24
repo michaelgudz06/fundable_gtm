@@ -18,10 +18,12 @@ POST /api/v1/personalize      Authorization: Bearer <PERSONALIZE_API_KEY>
 {
   "email": "reed@example-cre.com",
   "linkedin_url": "https://www.linkedin.com/in/...",
+  "stop_at": "email",                        // linkedin | icp | email (default)
   "message_type": "website_visitor",         // | signup_paid | signup_unpaid | cold_outbound | nurture
-  "template_id": "website_visitor_use_case", // XOR email_template
+  "template_id": "website_visitor_use_case", // XOR email_template; stop_at="email" only
   "known_fields": {
-    "first_name": "Reed",
+    "first_name": "Reed",                    // required
+    "last_name": "Whitfield",                // required
     "title": "VP, Investment Sales",         // the field that decides whether this works
     "company_name": "Example CRE",
     "company_domain": "example-cre.com"      // used when the address is personal
@@ -36,9 +38,33 @@ POST /api/v1/personalize      Authorization: Bearer <PERSONALIZE_API_KEY>
 }
 ```
 
-Success is **exactly three keys** — `icp`, `icp_use_cases`, `email_body`.
-`Not Core ICP` returns an empty use-case list and the approved generic body,
-never an error.
+Success is **exactly six keys** — `full_name`, `email`, `linkedin_url`, `icp`,
+`icp_use_cases`, `email_body`. `Not Core ICP` returns an empty use-case list and
+the approved generic body, never an error.
+
+### Run modes
+
+`stop_at` stops the pipeline early. Each mode returns a **prefix** of those six
+keys, never a different shape, so one reader handles all three.
+
+| `stop_at` | returns | costs | use it for |
+|---|---|---|---|
+| `linkedin` | `full_name`, `email`, `linkedin_url` | n8n cascade only, ~4s cold | resolving an address to a profile |
+| `icp` | + `icp`, `icp_use_cases` | + research and classification | labelling a list, HubSpot sync |
+| `email` *(default)* | + `email_body` | + composition | the full send |
+
+`message_type` and `template_id`/`email_template` are only valid with
+`stop_at: "email"` — the short modes reject them rather than accept copy
+instructions and return no copy. Omitting `stop_at` is exactly the old
+behaviour, so nothing that predates it changes.
+
+**Passing `linkedin_url` is not always the fast path.** It routes identity to
+Fundable's people index *instead of* the find-LinkedIn cascade. For someone the
+index doesn't have, that lookup can burn its full 8s cap, return no title, and
+drop the lead to the email-only classification path — slower and a worse label
+than sending no URL at all. Measured on one real lead: no URL → `ICP #6` in
+0.6s, with URL → `ICP #9` in 8.6s, with `known_fields.title` → `ICP #6` in
+0.45s. A title beats both.
 
 ### Headers worth logging
 
@@ -47,7 +73,9 @@ never an error.
 | `X-Icp-Registry-Version` + 3 more | pins an answer to the data that produced it |
 | `X-Body-Source` | `caller_template` \| `catalog_template` \| `generic_fallback` — a Not Core lead silently gets the generic even if you supplied your own template |
 | `X-Classifier-Agreement` | `3/3` or `2/3` — route `2/3` to human review |
-| `X-Classification` | `fresh` \| `cached` |
+| `X-Classification` | `fresh` \| `cached` \| `none` (a short mode never classified) |
+| `X-Stop-At` | which run mode produced this body |
+| `X-Identity` | `timeout` — the Fundable lookup blew its cap, so this label was made without a title |
 | `X-Use-Case-Type` | `alert` \| `mcp` \| `deferred` \| `none` |
 | `X-Handler-Ms`, `X-Stage-Ms` | our time vs the platform's, and which upstream leg spent it |
 
@@ -68,7 +96,7 @@ taken, and the HubSpot picklist value.
 ## Running it
 
 ```bash
-npm run verify     # typecheck every workspace + 140 offline tests + build
+npm run verify     # typecheck every workspace + 144 offline tests + build
 npm test           # offline only
 npm run dev        # localhost:3111
 ```
@@ -125,6 +153,7 @@ the first one moved CRE recall from 1/15 to 8/15.
 | | |
 |---|---|
 | [`docs/WORKFLOW.md`](docs/WORKFLOW.md) | visitor → email, end to end, with the measured numbers |
+| [`docs/TESTING.md`](docs/TESTING.md) | copy-pasteable prod checks for each of Jacob's eight asks |
 | [`docs/TESTSET.md`](docs/TESTSET.md) | the 29-row acceptance run and what it does *not* prove |
 | [`docs/SPEC-v2.md`](docs/SPEC-v2.md) | the spec this is built to |
 | [`FINDINGS.md`](FINDINGS.md) | 9 reproducible defects in the upstream Fundable API |

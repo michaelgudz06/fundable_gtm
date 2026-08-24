@@ -285,6 +285,51 @@ const CASES: Case[] = [
     },
   },
   {
+    name: "stop_at short-circuits to a documented PREFIX of the six keys",
+    why: "ask #7; a mode that returns a DIFFERENT shape rather than a prefix breaks every reader that walks the full body",
+    costly: true,
+    run: async () => {
+      const lead = { email: "someone.random@gmail.com", known_fields: { first_name: "Sam", last_name: "Rivera" } };
+      const li = await post({ ...lead, stop_at: "linkedin" });
+      const icp = await post({ ...lead, stop_at: "icp" });
+      const liKeys = Object.keys(li.body).sort().join(",");
+      const icpKeys = Object.keys(icp.body).sort().join(",");
+      return [
+        ...expectStatus(li, 200),
+        ...expectStatus(icp, 200),
+        ...ok(liKeys === "email,full_name,linkedin_url", `stop_at=linkedin: expected the first three keys, got {${liKeys}}`),
+        ...ok(
+          icpKeys === "email,full_name,icp,icp_use_cases,linkedin_url",
+          `stop_at=icp: expected the first five keys, got {${icpKeys}}`
+        ),
+        // The short modes take no template, so a mode leaking copy means the
+        // early return is not where it is supposed to be.
+        ...ok(!("email_body" in li.body) && !("email_body" in icp.body), "a short mode composed copy nobody asked for"),
+        ...ok(li.headers["x-stop-at"] === "linkedin", "X-Stop-At must say which mode answered"),
+        ...ok(icp.headers["x-stop-at"] === "icp", "X-Stop-At must say which mode answered"),
+      ];
+    },
+  },
+  {
+    name: "stop_at=linkedin skips classification entirely",
+    why: "the point of the mode is latency; if it still classifies it is the full route with keys hidden",
+    costly: true,
+    run: async () => {
+      const r = await post({
+        email: "someone.random@gmail.com",
+        known_fields: { first_name: "Sam", last_name: "Rivera" },
+        stop_at: "linkedin",
+      });
+      const stages = String(r.headers["x-stage-ms"] ?? "");
+      const model = Number(/model=(\d+)/.exec(stages)?.[1] ?? -1);
+      return [
+        ...expectStatus(r, 200),
+        ...ok(r.headers["x-classification"] === "none", `expected no classification, got ${String(r.headers["x-classification"])}`),
+        ...ok(model === 0, `expected no model time, got model=${model} in {${stages}}`),
+      ];
+    },
+  },
+  {
     name: "Not Core still returns a sendable generic body",
     why: "Jacob's rule: if someone doesn't match ICP we just send them template",
     costly: true,

@@ -127,4 +127,56 @@ describe("v1/personalize HTTP gates (offline)", () => {
     assert.equal(res.status, 422);
     assert.equal(await errorCode(res), "TEMPLATE_VALIDATION_FAILED");
   });
+
+  // ---- stop_at (Jacob's ask #7) --------------------------------------------
+  // Every case below returns before any upstream call, so the run modes cost
+  // nothing to test. That the SHORT modes return the right key set is asserted
+  // live, in scripts/contract-check.ts — it needs a real classification.
+  test("400 on an unknown stop_at, naming the three modes", async () => {
+    const res = await post({ email: "a@b.co", known_fields: NAMES, stop_at: "everything" });
+    assert.equal(res.status, 400);
+    assert.equal(await errorCode(res), "INVALID_REQUEST");
+    const j = (await (await post({ email: "a@b.co", known_fields: NAMES, stop_at: "" })).json()) as {
+      error: { message: string };
+    };
+    assert.match(j.error.message, /linkedin, icp, email/);
+  });
+
+  test("the short modes reject copy instructions instead of silently dropping them", async () => {
+    // The quiet failure this prevents: accepting a template, returning no
+    // email_body, and leaving the caller to believe their copy was rendered.
+    for (const [stop_at, extra] of [
+      ["linkedin", { template_id: "website_visitor_use_case" }],
+      ["icp", { email_template: "Hi {{first_name}}," }],
+    ] as const) {
+      const res = await post({ email: "a@b.co", known_fields: NAMES, stop_at, ...extra });
+      assert.equal(res.status, 400, stop_at);
+      assert.equal(await errorCode(res), "INVALID_REQUEST", stop_at);
+    }
+  });
+
+  test("a message_type that IS sent is still validated in the short modes", async () => {
+    const res = await post({ email: "a@b.co", known_fields: NAMES, stop_at: "linkedin", message_type: "carrier_pigeon" });
+    assert.equal(res.status, 400);
+    assert.equal(await errorCode(res), "INVALID_REQUEST");
+  });
+
+  test("omitting stop_at leaves the six-key contract's gates exactly as they were", async () => {
+    // Regression guard on backwards compatibility: the template pair is still
+    // mandatory, and still exactly-one, for every caller predating stop_at.
+    for (const body of [
+      { email: "a@b.co", known_fields: NAMES, message_type: "cold_outbound" },
+      {
+        email: "a@b.co",
+        known_fields: NAMES,
+        message_type: "cold_outbound",
+        template_id: "website_visitor_use_case",
+        email_template: "Hi {{first_name}},",
+      },
+    ]) {
+      const res = await post(body);
+      assert.equal(res.status, 400);
+      assert.equal(await errorCode(res), "INVALID_REQUEST");
+    }
+  });
 });

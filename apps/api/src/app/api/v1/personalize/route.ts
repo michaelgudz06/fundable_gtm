@@ -2,7 +2,10 @@
  * POST /api/v1/personalize — the shared decision layer (SPEC-v2).
  *
  * Success body is EXACTLY { full_name, email, linkedin_url, icp, icp_use_cases,
- * email_body } (API-003). Version
+ * email_body } (API-003) — or a documented PREFIX of it when the caller sends
+ * `stop_at` (Jacob's ask #7): "linkedin" returns the first three keys, "icp"
+ * the first five, "email" (the default, and what every pre-existing caller
+ * gets) all six. Version
  * headers carry every operative registry so a bad answer is traceable to the
  * data that produced it. Errors never include partial business output.
  *
@@ -18,7 +21,7 @@ import { getStorage } from "../../../../lib/storage";
 import { CLASSIFIER_PROMPT_VERSION } from "../../../../lib/v2/classify";
 import { registryFingerprint } from "../../../../lib/v2/classify-cached";
 import { validateTemplateSource } from "../../../../lib/v2/compose";
-import { decide, type Trace } from "../../../../lib/v2/personalize";
+import { STOP_AT, decide, type StopAt, type Trace } from "../../../../lib/v2/personalize";
 import { MESSAGE_TYPES, REGISTRY_VERSIONS, getTemplate, type MessageType } from "../../../../lib/v2/registry";
 
 export const runtime = "nodejs";
@@ -36,8 +39,8 @@ const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
  */
 const IDEMPOTENCY_SHAPE = "v2-six-key";
 
-const idemCacheKey = (key: string): string =>
-  `idem:${IDEMPOTENCY_SHAPE}:${registryFingerprint()}:${key}`;
+const idemCacheKey = (key: string, stopAt: StopAt): string =>
+  `idem:${IDEMPOTENCY_SHAPE}:${stopAt}:${registryFingerprint()}:${key}`;
 
 function versionHeaders(servedModel?: string): Record<string, string> {
   return {
@@ -63,6 +66,7 @@ function err(status: number, code: string, message: string, details?: unknown) {
 
 type RequestBody = {
   email?: unknown;
+  stop_at?: unknown;
   linkedin_url?: unknown;
   message_type?: unknown;
   template_id?: unknown;
@@ -166,7 +170,7 @@ async function record(
 
 export async function POST(req: Request): Promise<Response> {
   const started = Date.now();
-  const trace: Trace = { identity: 0, research: 0, model: 0, bodySource: "none", classification: "none", agreement: "", modelServed: "", useCaseType: "none", linkedinSource: "", identityTimedOut: false };
+  const trace: Trace = { identity: 0, research: 0, model: 0, bodySource: "none", classification: "none", agreement: "", modelServed: "", useCaseType: "none", linkedinSource: "", identityTimedOut: false, stopAt: "email" };
   const res = await handle(req, trace);
   res.headers.set("X-Handler-Ms", String(Date.now() - started));
   res.headers.set(
@@ -176,6 +180,7 @@ export async function POST(req: Request): Promise<Response> {
   // A Not Core lead gets the approved generic body even when the caller supplied
   // their own template — correct per spec, but invisible from the response body,
   // which is exactly how someone ends up believing their copy went out.
+  res.headers.set("X-Stop-At", trace.stopAt);
   res.headers.set("X-Body-Source", trace.bodySource);
   res.headers.set("X-Classification", trace.classification);
   if (trace.modelServed) res.headers.set("X-Model-Served", trace.modelServed);
@@ -223,15 +228,32 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
     return err(400, "INVALID_REQUEST", "`known_fields.first_name` and `known_fields.last_name` are both required.");
   }
 
+  // How far to run. Absent means the full pipeline, so every caller that
+  // predates this parameter keeps its exact behaviour and its six-key body.
+  if (body.stop_at !== undefined && !STOP_AT.includes(body.stop_at as StopAt)) {
+    return err(400, "INVALID_REQUEST", `\`stop_at\` must be one of: ${STOP_AT.join(", ")}.`);
+  }
+  const stopAt: StopAt = (body.stop_at as StopAt) ?? "email";
+  const composing = stopAt === "email";
+
+  // message_type and the template pair drive composition only. Demanding them
+  // from a caller who just wants a LinkedIn URL would be asking for a template
+  // to render copy nobody requested. Still validated when present, so a typo in
+  // a body carried over between modes is caught rather than silently dropped.
   const messageType = body.message_type as MessageType;
-  if (!MESSAGE_TYPES.includes(messageType)) {
+  const hasMessageType = typeof body.message_type === "string" && body.message_type.trim() !== "";
+  if ((composing || hasMessageType) && !MESSAGE_TYPES.includes(messageType)) {
     return err(400, "INVALID_REQUEST", `\`message_type\` must be one of: ${MESSAGE_TYPES.join(", ")}.`);
   }
   const hasTemplateId = typeof body.template_id === "string" && body.template_id.trim() !== "";
   const hasRawTemplate = typeof body.email_template === "string" && body.email_template.trim() !== "";
-  if (hasTemplateId === hasRawTemplate) {
+  if (composing && hasTemplateId === hasRawTemplate) {
     // Both or neither — the spec's exactly-one rule, fixture-tested.
     return err(400, "INVALID_REQUEST", "Provide exactly one of `template_id` or `email_template`.");
+  }
+  if (!composing && (hasTemplateId || hasRawTemplate)) {
+    // Fail loudly rather than accepting copy instructions and returning no copy.
+    return err(400, "INVALID_REQUEST", `\`template_id\`/\`email_template\` are only valid with stop_at="email".`);
   }
 
   const template = hasTemplateId ? getTemplate((body.template_id as string).trim()) : null;
@@ -258,18 +280,21 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
   const storage = getStorage();
   const idemKey = req.headers.get("idempotency-key")?.trim();
   if (idemKey) {
-    const cached = (await storage.cacheGet(idemCacheKey(idemKey), "fundable")) as Record<string, unknown> | null;
+    const cached = (await storage.cacheGet(idemCacheKey(idemKey, stopAt), "fundable")) as Record<string, unknown> | null;
     if (cached) {
       // Whitelisted rather than returned as-is: a replay must not be able to
-      // surface a key the live contract does not promise.
-      const canonical = {
+      // surface a key the live contract does not promise — and the promised set
+      // now depends on the mode, which is why the key is namespaced by it too.
+      const canonical: Record<string, unknown> = {
         full_name: cached.full_name,
         email: cached.email,
         linkedin_url: cached.linkedin_url ?? null,
-        icp: cached.icp,
-        icp_use_cases: cached.icp_use_cases,
-        email_body: cached.email_body,
       };
+      if (stopAt !== "linkedin") {
+        canonical.icp = cached.icp;
+        canonical.icp_use_cases = cached.icp_use_cases;
+      }
+      if (stopAt === "email") canonical.email_body = cached.email_body;
       return Response.json(canonical, { headers: { ...versionHeaders(), "X-Idempotent-Replay": "true" } });
     }
   }
@@ -303,18 +328,19 @@ async function handle(req: Request, trace: Trace): Promise<Response> {
       fundable,
       exa,
       trace,
+      stopAt,
     });
     if (!decision.ok) return err(decision.status, decision.code, decision.message, decision.details);
 
     const { success } = decision;
     if (idemKey) {
-      await storage.cacheSet(idemCacheKey(idemKey), "fundable", success, IDEMPOTENCY_TTL_MS);
+      await storage.cacheSet(idemCacheKey(idemKey, stopAt), "fundable", success, IDEMPOTENCY_TTL_MS);
     }
 
     await record(storage, auth.keyHash, {
-      messageType,
+      messageType: composing ? messageType : `stop_at:${stopAt}`,
       status: "ok",
-      icp: success.icp,
+      icp: success.icp ?? null,
       trace,
       handlerMs: Date.now() - handlerStarted,
       fundableCredits: fundable.credits,

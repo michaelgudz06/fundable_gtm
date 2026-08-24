@@ -60,7 +60,21 @@ export type Trace = {
   linkedinSource: string;
   /** The Fundable lookup blew its 8s cap; the lead was classified without it. */
   identityTimedOut: boolean;
+  /** Which run mode produced this body; reported as X-Stop-At. */
+  stopAt: string;
 };
+
+/**
+ * How far down the pipeline to run (Jacob's ask #7). Each mode is the one
+ * above it plus a stage, so the response is a prefix of the six-key body —
+ * never a different shape for the same stage.
+ *
+ *   linkedin -> { full_name, email, linkedin_url }
+ *   icp      -> + { icp, icp_use_cases }
+ *   email    -> + { email_body }   (the default; the pre-existing behaviour)
+ */
+export const STOP_AT = ["linkedin", "icp", "email"] as const;
+export type StopAt = (typeof STOP_AT)[number];
 
 export type Decision =
   | {
@@ -72,9 +86,11 @@ export type Decision =
         full_name: string;
         email: string;
         linkedin_url: string | null;
-        icp: string;
-        icp_use_cases: UseCase[];
-        email_body: string;
+        /** Absent only when stop_at="linkedin". */
+        icp?: string;
+        icp_use_cases?: UseCase[];
+        /** Absent unless stop_at="email". */
+        email_body?: string;
       };
       usage: Usage[];
       warnings: string[];
@@ -157,9 +173,14 @@ export async function decide(input: {
   fundable: ReturnType<typeof newLedger>;
   exa: ExaLedger;
   trace: Trace;
+  /** How far to run. Defaults to the full pipeline for callers predating it. */
+  stopAt?: StopAt;
 }): Promise<Decision> {
   const { email, messageType, template, rawTemplate, deadlineAt, fundable, exa, trace } = input;
   const { firstName, lastName, location } = input;
+  const stopAt: StopAt = input.stopAt ?? "email";
+  trace.stopAt = stopAt;
+  const fullName = `${firstName} ${lastName}`;
   let linkedin = input.linkedin;
   const kf = input.knownFields;
   const ctxIn = input.additionalContext;
@@ -181,7 +202,10 @@ export async function decide(input: {
   const preTarget = title
     ? researchTarget({ emailDomain, companyDomain: researchDomain, company })
     : null; // no title yet: the freemail gate may make research unnecessary
-  const researchTask = preTarget ? startResearch(preTarget, exa) : undefined;
+  // Not started for stop_at="linkedin": that mode returns before classification,
+  // so the research would be an Exa charge nobody reads and a floating promise
+  // whose rejection has no handler once we have returned.
+  const researchTask = preTarget && stopAt !== "linkedin" ? startResearch(preTarget, exa) : undefined;
 
   if (linkedin) {
     const tIdentity = Date.now();
@@ -233,6 +257,10 @@ export async function decide(input: {
     }
   }
 
+  if (stopAt === "linkedin") {
+    return { ok: true, success: { full_name: fullName, email, linkedin_url: linkedin ?? null }, usage: [], warnings: [] };
+  }
+
   // ---- classification -------------------------------------------------------
   // company_domain (read above) is the caller's assertion about the employer.
   // It never overrides a corporate email domain and never participates in the
@@ -263,6 +291,15 @@ export async function decide(input: {
     // until product and delivery context are known. The lead still gets copy —
     // it just makes no use-case claim.
     trace.useCaseType = "deferred";
+  }
+
+  if (stopAt === "icp") {
+    return {
+      ok: true,
+      success: { full_name: fullName, email, linkedin_url: linkedin ?? null, icp: cls.label, icp_use_cases: useCases },
+      usage: cls.usage,
+      warnings: cls.warnings,
+    };
   }
 
   // ---- compose (GEN-001..009, CTX-001..004) ---------------------------------
@@ -351,7 +388,7 @@ export async function decide(input: {
   return {
     ok: true,
     success: {
-      full_name: `${firstName} ${lastName}`,
+      full_name: fullName,
       email,
       // Either the caller's URL or the one the cascade approved — never a
       // candidate it rejected, and null when neither exists.
