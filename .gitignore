@@ -51,3 +51,8 @@ yarn-error.log*
 # self-baseline reads as satisfying that clause when it only restates our own
 # last run. Commit it once Jacob has agreed to redefine the criterion.
 /config/eval/baseline.json
+
+# Local agent config, not part of the project
+CLAUDE.md
+AGENTS.md
+.claude/
